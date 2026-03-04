@@ -70,6 +70,52 @@
       </div>
     </div>
 
+    <!-- 语音输入 (Vosk) 配置 -->
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold mb-4">语音输入 (Vosk)</h2>
+      <div class="space-y-4">
+        <div class="flex items-center gap-2">
+          <input
+            v-model="config.vosk.enabled"
+            type="checkbox"
+            id="vosk_enabled"
+            class="w-4 h-4 text-primary-600"
+          />
+          <label for="vosk_enabled" class="text-sm">启用语音输入</label>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">Vosk 服务地址</label>
+          <input
+            v-model="config.vosk.url"
+            type="text"
+            placeholder="ws://localhost:5000"
+            :disabled="!config.vosk.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">API Key</label>
+          <input
+            v-model="config.vosk.api_key"
+            type="password"
+            placeholder="请输入 API Key"
+            :disabled="!config.vosk.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">静音超时 (毫秒)</label>
+          <input
+            v-model.number="config.vosk.silence_timeout"
+            type="number"
+            placeholder="3000"
+            :disabled="!config.vosk.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- 应用偏好 -->
     <div class="mb-8">
       <h2 class="text-lg font-semibold mb-4">应用偏好</h2>
@@ -124,12 +170,19 @@ interface Config {
     theme: string
     language: string
   }
+  vosk: {
+    url: string
+    api_key: string
+    enabled: boolean
+    silence_timeout: number
+  }
 }
 
 const config = ref<Config>({
   openclaw: { url: 'http://localhost:8000', use_local: true },
   market: { url: 'http://localhost:3001', enabled: true },
-  preferences: { theme: 'system', language: 'zh-CN' }
+  preferences: { theme: 'system', language: 'zh-CN' },
+  vosk: { url: 'ws://localhost:5000', api_key: '', enabled: false, silence_timeout: 3000 }
 })
 
 const apiKey = ref('')
