@@ -26,6 +26,25 @@ pub struct MarketConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoskConfig {
+    pub url: String,
+    pub api_key: String,
+    pub enabled: bool,
+    pub silence_timeout: u32,
+}
+
+impl Default for VoskConfig {
+    fn default() -> Self {
+        Self {
+            url: "ws://localhost:5000".to_string(),
+            api_key: "".to_string(),
+            enabled: false,
+            silence_timeout: 3000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppPreferences {
     pub theme: String,
     pub language: String,
@@ -36,6 +55,7 @@ pub struct AppConfig {
     pub openclaw: OpenClawConfig,
     pub market: MarketConfig,
     pub preferences: AppPreferences,
+    pub vosk: VoskConfig,
 }
 
 impl Default for OpenClawConfig {
@@ -71,6 +91,7 @@ impl Default for AppConfig {
             openclaw: OpenClawConfig::default(),
             market: MarketConfig::default(),
             preferences: AppPreferences::default(),
+            vosk: VoskConfig::default(),
         }
     }
 }
