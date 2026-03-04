@@ -2,9 +2,10 @@
 
 mod config;
 mod db;
+mod openclaw;
 mod commands;
 
-use commands::{AppState, create_session, list_sessions, get_messages, delete_session, add_message};
+use commands::{AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message};
 use db::Database;
 use std::sync::Mutex;
 
@@ -18,7 +19,8 @@ fn main() {
             list_sessions,
             get_messages,
             delete_session,
-            add_message
+            add_message,
+            send_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

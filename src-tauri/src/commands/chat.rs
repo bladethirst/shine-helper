@@ -1,4 +1,5 @@
 use crate::db::{Database, Message, Session};
+use crate::openclaw::OpenClawClient;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::State;
@@ -58,4 +59,27 @@ pub fn add_message(
     let db = state.db.lock().unwrap();
     let message = db.add_message(&session_id, &role, &content)?;
     Ok(message)
+}
+
+#[tauri::command]
+pub async fn send_message(
+    state: State<'_, AppState>,
+    session_id: String,
+    message: String,
+) -> Result<String, CommandError> {
+    // 构建 OpenClaw 请求
+    let config = crate::config::load_config().unwrap_or_default();
+    let mut client = OpenClawClient::new(&config.openclaw.url);
+    
+    // 调用 OpenClaw API
+    let response = client.chat(&message).await
+        .map_err(|e| CommandError { message: e })?;
+    
+    // 保存助手回复
+    {
+        let db = state.db.lock().unwrap();
+        db.add_message(&session_id, "assistant", &response).ok();
+    }
+    
+    Ok(response)
 }
