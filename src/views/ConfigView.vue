@@ -2,46 +2,22 @@
   <div class="h-full overflow-auto p-6">
     <h1 class="text-2xl font-bold mb-6">配置</h1>
 
-    <!-- OpenClaw 配置 -->
+    <!-- AI 服务配置 - 简化显示 -->
     <div class="mb-8">
-      <h2 class="text-lg font-semibold mb-4">OpenClaw 连接</h2>
+      <h2 class="text-lg font-semibold mb-4">AI 服务</h2>
+      <div class="text-sm text-gray-500 mb-4">
+        已集成 OpenClaw AI 助手
+      </div>
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium mb-1">服务地址</label>
-          <input
-            v-model="config.openclaw.url"
-            type="text"
-            placeholder="http://localhost:8000"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
-        </div>
-        <div class="flex items-center gap-2">
-          <input
-            v-model="config.openclaw.use_local"
-            type="checkbox"
-            id="use_local"
-            class="w-4 h-4 text-primary-600"
-          />
-          <label for="use_local" class="text-sm">使用本地服务</label>
-        </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">API Key</label>
+          <label class="block text-sm font-medium mb-1">API Key (可选)</label>
           <input
             v-model="apiKey"
             type="password"
-            placeholder="请输入 API Key"
+            placeholder="用于 OpenAI 等模型认证"
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
-        <button
-          @click="testConnection"
-          class="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600"
-        >
-          测试连接
-        </button>
-        <span v-if="connectionStatus" :class="connectionStatus === 'success' ? 'text-green-600' : 'text-red-600'">
-          {{ connectionStatus === 'success' ? '✓ 连接成功' : '✗ 连接失败' }}
-        </span>
       </div>
     </div>
 
@@ -161,6 +137,7 @@ interface Config {
   openclaw: {
     url: string
     use_local: boolean
+    auto_start: boolean
   }
   market: {
     url: string
@@ -179,24 +156,17 @@ interface Config {
 }
 
 const config = ref<Config>({
-  openclaw: { url: 'http://localhost:8000', use_local: true },
+  openclaw: { url: 'http://localhost:18789', use_local: true, auto_start: true },
   market: { url: 'http://localhost:3001', enabled: true },
   preferences: { theme: 'system', language: 'zh-CN' },
   vosk: { url: 'ws://localhost:5000', api_key: '', enabled: false, silence_timeout: 3000 }
 })
 
 const apiKey = ref('')
-const connectionStatus = ref<'success' | 'error' | null>(null)
 
 const saveConfig = () => {
-  // TODO: 保存配置到后端
+  // 保存配置到后端
   console.log('Saving config:', config.value)
   alert('配置已保存')
-}
-
-const testConnection = () => {
-  // TODO: 测试连接
-  console.log('Testing connection to:', config.value.openclaw.url)
-  connectionStatus.value = 'success'
 }
 </script>
