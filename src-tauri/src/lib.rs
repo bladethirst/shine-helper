@@ -20,6 +20,17 @@ pub fn check_openclaw_running() -> bool {
     ).is_ok()
 }
 
+/// 获取 Node.js 可执行文件名（跨平台）
+#[cfg(target_os = "windows")]
+fn get_node_exe(node_dir: &PathBuf) -> PathBuf {
+    node_dir.join("node.exe")
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_node_exe(node_dir: &PathBuf) -> PathBuf {
+    node_dir.join("bin").join("node")
+}
+
 /// 启动 OpenClaw 进程
 pub fn start_openclaw_process(openclaw_dir: &str, node_dir: &str) -> Result<(), String> {
     let openclaw_path = PathBuf::from(openclaw_dir);
@@ -27,10 +38,10 @@ pub fn start_openclaw_process(openclaw_dir: &str, node_dir: &str) -> Result<(), 
     
     let gateway_js = openclaw_path.join("gateway.js");
     let data_dir = openclaw_path.join("data");
-    let node_exe = node_path.join("node.exe");
+    let node_exe = get_node_exe(&node_path);
     
     if !node_exe.exists() {
-        return Err("Node.js executable not found".to_string());
+        return Err(format!("Node.js executable not found: {:?}", node_exe));
     }
     
     if !gateway_js.exists() {

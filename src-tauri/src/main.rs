@@ -1,3 +1,5 @@
+// 根据操作系统选择子系统
+#[cfg(target_os = "windows")]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
