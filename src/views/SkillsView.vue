@@ -81,7 +81,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@tauri-apps/api/tauri'
 
 interface Skill {
   id: string

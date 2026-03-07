@@ -38,7 +38,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@tauri-apps/api/tauri'
 import ChatMessage from '@/components/ChatMessage.vue'
 import ChatInput from '@/components/ChatInput.vue'
 

@@ -51,7 +51,7 @@ pub struct AppPreferences {
     pub language: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub openclaw: OpenClawConfig,
     pub market: MarketConfig,
