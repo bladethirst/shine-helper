@@ -16,6 +16,7 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenClawConfig {
     pub url: String,
+    pub token: String,
     pub use_local: bool,
     pub auto_start: bool,
 }
@@ -63,6 +64,7 @@ impl Default for OpenClawConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:18789".to_string(),
+            token: "bca6dd74789ed4ebd4eb8761215de98d11f62c85eb16239a".to_string(),
             use_local: true,
             auto_start: true,
         }

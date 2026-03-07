@@ -7,7 +7,7 @@ mod skills;
 mod commands;
 
 use commands::{
-    AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message,
+    AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message, send_message_stream,
     SkillsState, get_local_skills, install_skill, uninstall_skill
 };
 use db::Database;
@@ -68,7 +68,6 @@ fn start_openclaw_process(openclaw_dir: &str, node_dir: &str) -> Result<(), Stri
 }
 
 fn main() {
-    // 获取资源目录路径
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
@@ -78,7 +77,6 @@ fn main() {
     let node_dir = resources_dir.join("node");
     let openclaw_dir = resources_dir.join("openclaw");
     
-    // 检查并启动 OpenClaw
     if resources_dir.exists() && !check_openclaw_running() {
         println!("[Shine Helper] Starting OpenClaw...");
         if let Err(e) = start_openclaw_process(
@@ -102,6 +100,7 @@ fn main() {
             delete_session,
             add_message,
             send_message,
+            send_message_stream,
             get_local_skills,
             install_skill,
             uninstall_skill

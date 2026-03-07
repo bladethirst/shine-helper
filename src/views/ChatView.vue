@@ -23,12 +23,6 @@
         :role="msg.role as 'user' | 'assistant'"
         :content="msg.content"
       />
-      <div v-if="isLoading" class="flex gap-3 mb-4">
-        <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm">🤖</div>
-        <div class="bg-gray-100 rounded-lg p-3">
-          <span class="animate-pulse">正在输入...</span>
-        </div>
-      </div>
     </div>
 
     <!-- 输入框 -->
@@ -37,8 +31,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/tauri'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import ChatMessage from '@/components/ChatMessage.vue'
 import ChatInput from '@/components/ChatInput.vue'
 
@@ -57,10 +52,26 @@ interface Session {
   updated_at: string
 }
 
+interface StreamChunk {
+  content: string
+  done: boolean
+}
+
 const sessions = ref<Session[]>([])
 const currentSession = ref<Session | null>(null)
 const messages = ref<Message[]>([])
 const isLoading = ref(false)
+let unlistenChunk: UnlistenFn | null = null
+let unlistenError: UnlistenFn | null = null
+
+function scrollToBottom() {
+  nextTick(() => {
+    const container = document.querySelector('.flex-1.overflow-auto')
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
+  })
+}
 
 onMounted(async () => {
   try {
@@ -72,6 +83,28 @@ onMounted(async () => {
   } catch (e) {
     console.error('Failed to load sessions:', e)
   }
+  
+  unlistenChunk = await listen<StreamChunk>('chat_chunk', (event) => {
+    const chunk = event.payload
+    const lastMsg = messages.value[messages.value.length - 1]
+    
+    if (chunk.done) {
+      isLoading.value = false
+    } else if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.content += chunk.content
+      scrollToBottom()
+    }
+  })
+  
+  unlistenError = await listen<string>('chat_error', (event) => {
+    console.error('Chat error:', event.payload)
+    isLoading.value = false
+  })
+})
+
+onUnmounted(() => {
+  unlistenChunk?.()
+  unlistenError?.()
 })
 
 const createNewSession = async () => {
@@ -90,7 +123,6 @@ const handleSend = async (content: string) => {
     await createNewSession()
   }
   
-  // 添加用户消息
   try {
     const userMsg = await invoke<Message>('add_message', {
       sessionId: currentSession.value!.id,
@@ -98,23 +130,34 @@ const handleSend = async (content: string) => {
       content
     })
     messages.value.push(userMsg)
+    scrollToBottom()
     
     isLoading.value = true
     
-    // TODO: 调用 OpenClaw API (Task 3.2)
-    // 暂时显示模拟响应
-    setTimeout(async () => {
-      const assistantMsg = await invoke<Message>('add_message', {
-        sessionId: currentSession.value!.id,
-        role: 'assistant',
-        content: '这是一条模拟回复。请先配置 OpenClaw 连接。'
-      })
-      messages.value.push(assistantMsg)
-      isLoading.value = false
-    }, 1000)
-  } catch (e) {
+    const placeholderMsg: Message = {
+      id: `msg_ai_${Date.now()}`,
+      session_id: currentSession.value!.id,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString()
+    }
+    messages.value.push(placeholderMsg)
+    
+    await invoke('send_message_stream', {
+      sessionId: currentSession.value!.id,
+      message: content
+    })
+  } catch (e: any) {
     console.error('Failed to send message:', e)
     isLoading.value = false
+    
+    const errorMessage = e?.message || e?.toString() || String(e)
+    const errorMsg = await invoke<Message>('add_message', {
+      sessionId: currentSession.value!.id,
+      role: 'assistant',
+      content: `发送失败: ${errorMessage}`
+    })
+    messages.value.push(errorMsg)
   }
 }
 </script>

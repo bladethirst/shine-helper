@@ -2,10 +2,16 @@ use crate::db::{Database, Message, Session};
 use crate::openclaw::OpenClawClient;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{State, Manager};
 
 pub struct AppState {
     pub db: Mutex<Database>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct StreamChunk {
+    pub content: String,
+    pub done: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -62,20 +68,58 @@ pub fn add_message(
 }
 
 #[tauri::command]
+pub async fn send_message_stream(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+    message: String,
+) -> Result<(), CommandError> {
+    let config = crate::config::load_config().unwrap_or_default();
+    let mut client = OpenClawClient::new(&config.openclaw.url);
+    client.set_token(config.openclaw.token);
+    
+    let mut full_response = String::new();
+    
+    let result = client.chat_stream(&message, |chunk| {
+        full_response.push_str(&chunk);
+        let _ = app_handle.emit_all("chat_chunk", StreamChunk {
+            content: chunk,
+            done: false,
+        });
+    }).await;
+    
+    match result {
+        Ok(_) => {
+            let _ = app_handle.emit_all("chat_chunk", StreamChunk {
+                content: String::new(),
+                done: true,
+            });
+            
+            let db = state.db.lock().unwrap();
+            db.add_message(&session_id, "assistant", &full_response).ok();
+        }
+        Err(e) => {
+            let _ = app_handle.emit_all("chat_error", e.clone());
+            return Err(CommandError { message: e });
+        }
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn send_message(
     state: State<'_, AppState>,
     session_id: String,
     message: String,
 ) -> Result<String, CommandError> {
-    // 构建 OpenClaw 请求
     let config = crate::config::load_config().unwrap_or_default();
     let mut client = OpenClawClient::new(&config.openclaw.url);
+    client.set_token(config.openclaw.token);
     
-    // 调用 OpenClaw API
     let response = client.chat(&message).await
         .map_err(|e| CommandError { message: e })?;
     
-    // 保存助手回复
     {
         let db = state.db.lock().unwrap();
         db.add_message(&session_id, "assistant", &response).ok();
