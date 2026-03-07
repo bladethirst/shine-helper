@@ -2,10 +2,12 @@ use crate::db::{Database, Message, Session};
 use crate::openclaw::OpenClawClient;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use std::collections::HashMap;
 use tauri::{State, Manager};
 
 pub struct AppState {
     pub db: Mutex<Database>,
+    pub openclaw_sessions: Mutex<HashMap<String, String>>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -80,7 +82,7 @@ pub async fn send_message_stream(
     
     let mut full_response = String::new();
     
-    let result = client.chat_stream(&message, |chunk| {
+    let result = client.chat_stream(&message, Some(&session_id), |chunk| {
         full_response.push_str(&chunk);
         let _ = app_handle.emit_all("chat_chunk", StreamChunk {
             content: chunk,
@@ -117,7 +119,7 @@ pub async fn send_message(
     let mut client = OpenClawClient::new(&config.openclaw.url);
     client.set_token(config.openclaw.token);
     
-    let response = client.chat(&message).await
+    let (response, _) = client.chat(&message, Some(&session_id)).await
         .map_err(|e| CommandError { message: e })?;
     
     {

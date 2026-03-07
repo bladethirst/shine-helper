@@ -13,6 +13,7 @@ use commands::{
 use db::Database;
 use skills::SkillsManager;
 use std::sync::Mutex;
+use std::collections::HashMap;
 use std::process::Command;
 use std::net::TcpStream;
 use std::time::Duration;
@@ -91,7 +92,10 @@ fn main() {
     let skills_manager = SkillsManager::new();
     
     tauri::Builder::default()
-        .manage(AppState { db: Mutex::new(db) })
+        .manage(AppState { 
+            db: Mutex::new(db),
+            openclaw_sessions: Mutex::new(HashMap::new()),
+        })
         .manage(SkillsState { manager: Mutex::new(skills_manager) })
         .invoke_handler(tauri::generate_handler![
             create_session,
