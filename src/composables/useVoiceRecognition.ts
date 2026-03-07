@@ -26,7 +26,7 @@ export function useVoiceRecognition(options: UseVoiceRecognitionOptions = {}) {
 
   const initProvider = () => {
     try {
-      provider = createProvider(options.provider || 'websocket-vosk');
+      provider = createProvider(options.provider || 'tauri-vosk');
       
       // 配置 Vosk
       if ('setConfig' in provider && options.voskUrl) {

@@ -2,10 +2,13 @@
 
 ## 一、问题背景
 
-在银河麒麟 V10 SP1 操作系统上构建 Tauri v1 应用时，遇到以下问题：
-1. `wry` 版本与系统 `webkit2gtk-4.0` (版本 2.38.6) 不兼容
-2. 报错：`error[E0599]: no method named 'set_enable_webgl' found for struct 'webkit2gtk::Settings'`
-3. Tauri v2 API 与 v1 不兼容
+在银河麒麟 V10 SP1 操作系统上构建 Tauri 应用时，**只能使用 Tauri v1**。Tauri v2 由于 `wry` 版本与系统 `webkit2gtk-4.0` (版本 2.38.6) 不兼容，无法在麒麟系统上运行。
+
+Tauri v1 的已知限制：
+- `navigator.mediaDevices` 在某些平台（包括 Linux 麒麟系统）上可能是 undefined
+- 无法直接通过浏览器 API 访问麦克风
+
+因此需要使用 Rust 后端来处理麦克风音频捕获。
 
 ## 二、已完成的修改
 

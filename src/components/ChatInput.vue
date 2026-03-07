@@ -79,9 +79,14 @@ const {
 })
 
 const isSupported = computed(() => {
+  if (props.voskEnabled) {
+    return true
+  }
   return typeof window !== 'undefined' && 
          'WebSocket' in window && 
-         'MediaRecorder' in window;
+         'AudioContext' in window &&
+         navigator.mediaDevices && 
+         'getUserMedia' in navigator.mediaDevices;
 })
 
 // 同步转录结果到输入框

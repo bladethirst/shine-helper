@@ -2,10 +2,12 @@ pub mod config;
 pub mod db;
 pub mod openclaw;
 pub mod skills;
+pub mod voice;
 pub use config::*;
 pub use db::*;
 pub use openclaw::*;
 pub use skills::*;
+pub use voice::*;
 
 use std::process::Command;
 use std::net::TcpStream;

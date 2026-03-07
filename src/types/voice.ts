@@ -7,7 +7,7 @@ export interface SpeechConfig {
 
 export type VoiceInputStatus = 'idle' | 'listening' | 'processing' | 'error';
 
-export type ProviderType = 'websocket-vosk';
+export type ProviderType = 'websocket-vosk' | 'tauri-vosk';
 
 export interface VoiceInputProps {
   lang?: string;

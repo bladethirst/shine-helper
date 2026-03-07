@@ -26,7 +26,12 @@
     </div>
 
     <!-- 输入框 -->
-    <ChatInput @send="handleSend" />
+    <ChatInput 
+      @send="handleSend" 
+      :vosk-enabled="voskEnabled"
+      :vosk-url="voskUrl"
+      :vosk-api-key="voskApiKey"
+    />
   </div>
 </template>
 
@@ -61,6 +66,11 @@ const sessions = ref<Session[]>([])
 const currentSession = ref<Session | null>(null)
 const messages = ref<Message[]>([])
 const isLoading = ref(false)
+
+// Vosk 配置
+const voskEnabled = ref(false)
+const voskUrl = ref('ws://192.168.150.26:5000')
+const voskApiKey = ref('')
 let unlistenChunk: UnlistenFn | null = null
 let unlistenError: UnlistenFn | null = null
 
@@ -74,6 +84,21 @@ function scrollToBottom() {
 }
 
 onMounted(async () => {
+  // 加载配置
+  const savedConfig = localStorage.getItem('shine_helper_config')
+  if (savedConfig) {
+    try {
+      const config = JSON.parse(savedConfig)
+      if (config.vosk) {
+        voskEnabled.value = config.vosk.enabled ?? false
+        voskUrl.value = config.vosk.url || 'ws://192.168.150.26:5000'
+        voskApiKey.value = config.vosk.api_key || ''
+      }
+    } catch (e) {
+      console.error('Failed to load config:', e)
+    }
+  }
+  
   try {
     sessions.value = await invoke<Session[]>('list_sessions')
     if (sessions.value.length > 0) {

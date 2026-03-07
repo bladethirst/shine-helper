@@ -137,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 
 interface Config {
   openclaw: {
@@ -166,15 +166,63 @@ const config = ref<Config>({
   openclaw: { url: 'http://localhost:18789', token: DEFAULT_TOKEN },
   market: { url: 'http://localhost:3001', enabled: true },
   preferences: { theme: 'system', language: 'zh-CN' },
-  vosk: { url: 'ws://localhost:5000', api_key: '', enabled: false, silence_timeout: 3000 }
+  vosk: { url: 'ws://192.168.150.26:5000', api_key: '', enabled: false, silence_timeout: 3000 }
+})
+
+// 加载保存的配置
+onMounted(() => {
+  const saved = localStorage.getItem('shine_helper_config')
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved)
+      if (parsed.openclaw) {
+        config.value.openclaw.url = parsed.openclaw.serverUrl || config.value.openclaw.url
+        config.value.openclaw.token = parsed.openclaw.token || config.value.openclaw.token
+      }
+      if (parsed.market) {
+        config.value.market.url = parsed.market.url || config.value.market.url
+        config.value.market.enabled = parsed.market.enabled ?? config.value.market.enabled
+      }
+      if (parsed.preferences) {
+        config.value.preferences.theme = parsed.preferences.theme || config.value.preferences.theme
+        config.value.preferences.language = parsed.preferences.language || config.value.preferences.language
+      }
+      if (parsed.vosk) {
+        config.value.vosk.url = parsed.vosk.url || config.value.vosk.url
+        config.value.vosk.api_key = parsed.vosk.api_key || config.value.vosk.api_key
+        config.value.vosk.enabled = parsed.vosk.enabled ?? config.value.vosk.enabled
+        config.value.vosk.silence_timeout = parsed.vosk.silence_timeout || config.value.vosk.silence_timeout
+      }
+    } catch (e) {
+      console.error('Failed to load config:', e)
+    }
+  }
 })
 
 const saveConfig = () => {
-  localStorage.setItem('openclaw_config', JSON.stringify({
-    serverUrl: config.value.openclaw.url,
-    token: config.value.openclaw.token
-  }))
-  console.log('Saving config:', config.value)
+  // 保存完整配置
+  const fullConfig = {
+    openclaw: {
+      serverUrl: config.value.openclaw.url,
+      token: config.value.openclaw.token
+    },
+    market: {
+      url: config.value.market.url,
+      enabled: config.value.market.enabled
+    },
+    preferences: {
+      theme: config.value.preferences.theme,
+      language: config.value.preferences.language
+    },
+    vosk: {
+      url: config.value.vosk.url,
+      api_key: config.value.vosk.api_key,
+      enabled: config.value.vosk.enabled,
+      silence_timeout: config.value.vosk.silence_timeout
+    }
+  }
+  localStorage.setItem('shine_helper_config', JSON.stringify(fullConfig))
+  console.log('Saving config:', fullConfig)
   alert('配置已保存')
 }
 </script>

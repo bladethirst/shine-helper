@@ -5,10 +5,14 @@ mod db;
 mod openclaw;
 mod skills;
 mod commands;
+mod voice;
 
 use commands::{
     AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message, send_message_stream,
     SkillsState, get_local_skills, install_skill, uninstall_skill
+};
+use voice::{
+    list_microphones, start_voice_recognition, stop_voice_recognition
 };
 use db::Database;
 use skills::SkillsManager;
@@ -107,7 +111,10 @@ fn main() {
             send_message_stream,
             get_local_skills,
             install_skill,
-            uninstall_skill
+            uninstall_skill,
+            list_microphones,
+            start_voice_recognition,
+            stop_voice_recognition
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
