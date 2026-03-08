@@ -24,6 +24,7 @@ tokio-stream = "0.1"
 bytes = "1"
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
+url = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 keyring = "3"
 dirs = "5"
@@ -32,6 +33,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 log = "0.4"
 env_logger = "0.11"
 thiserror = "1"
+rand = "0.8"
+cpal = "0.15"
 
 [features]
 default = ["custom-protocol"]

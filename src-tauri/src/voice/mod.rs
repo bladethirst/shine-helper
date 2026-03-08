@@ -1,3 +1,12 @@
+pub mod asr_client;
+pub mod audio_capture;
+pub mod tts_player;
+pub mod wake_word;
+
+pub use asr_client::*;
+pub use tts_player::TtsPlayer;
+pub use wake_word::{WakeWordDetector, contains_end_word};
+
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
