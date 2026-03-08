@@ -62,6 +62,15 @@ interface StreamChunk {
   done: boolean
 }
 
+interface AppConfig {
+  vosk?: {
+    enabled: boolean
+    url: string
+    api_key: string
+    silence_timeout: number
+  }
+}
+
 const sessions = ref<Session[]>([])
 const currentSession = ref<Session | null>(null)
 const messages = ref<Message[]>([])
@@ -73,18 +82,10 @@ const voskUrl = ref('ws://192.168.150.26:5000')
 const voskApiKey = ref('')
 let unlistenChunk: UnlistenFn | null = null
 let unlistenError: UnlistenFn | null = null
+let configUpdateHandler: ((event: Event) => void) | null = null
 
-function scrollToBottom() {
-  nextTick(() => {
-    const container = document.querySelector('.flex-1.overflow-auto')
-    if (container) {
-      container.scrollTop = container.scrollHeight
-    }
-  })
-}
-
-onMounted(async () => {
-  // 加载配置
+// 从 localStorage 加载配置
+const loadConfigFromStorage = () => {
   const savedConfig = localStorage.getItem('shine_helper_config')
   if (savedConfig) {
     try {
@@ -98,6 +99,20 @@ onMounted(async () => {
       console.error('Failed to load config:', e)
     }
   }
+}
+
+function scrollToBottom() {
+  nextTick(() => {
+    const container = document.querySelector('.flex-1.overflow-auto')
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
+  })
+}
+
+onMounted(async () => {
+  // 加载配置
+  loadConfigFromStorage()
   
   try {
     sessions.value = await invoke<Session[]>('list_sessions')
@@ -125,11 +140,26 @@ onMounted(async () => {
     console.error('Chat error:', event.payload)
     isLoading.value = false
   })
+  
+  // 监听配置更新事件
+  configUpdateHandler = (event: Event) => {
+    const customEvent = event as CustomEvent<AppConfig>
+    if (customEvent.detail?.vosk) {
+      voskEnabled.value = customEvent.detail.vosk.enabled ?? false
+      voskUrl.value = customEvent.detail.vosk.url || 'ws://192.168.150.26:5000'
+      voskApiKey.value = customEvent.detail.vosk.api_key || ''
+      console.log('Config updated, voice input enabled:', voskEnabled.value)
+    }
+  }
+  window.addEventListener('config-updated', configUpdateHandler)
 })
 
 onUnmounted(() => {
   unlistenChunk?.()
   unlistenError?.()
+  if (configUpdateHandler) {
+    window.removeEventListener('config-updated', configUpdateHandler)
+  }
 })
 
 const createNewSession = async () => {

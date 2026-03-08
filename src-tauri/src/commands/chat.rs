@@ -77,8 +77,12 @@ pub async fn send_message_stream(
     message: String,
 ) -> Result<(), CommandError> {
     let config = crate::config::load_config().unwrap_or_default();
-    let mut client = OpenClawClient::new(&config.openclaw.url);
-    client.set_token(config.openclaw.token);
+    let token = crate::config::get_openclaw_token()
+        .map_err(|e| CommandError { message: e.to_string() })?;
+    let url = crate::config::get_openclaw_url();
+    
+    let mut client = OpenClawClient::new(&url);
+    client.set_token(token);
     
     let mut full_response = String::new();
     
@@ -116,8 +120,12 @@ pub async fn send_message(
     message: String,
 ) -> Result<String, CommandError> {
     let config = crate::config::load_config().unwrap_or_default();
-    let mut client = OpenClawClient::new(&config.openclaw.url);
-    client.set_token(config.openclaw.token);
+    let token = crate::config::get_openclaw_token()
+        .map_err(|e| CommandError { message: e.to_string() })?;
+    let url = crate::config::get_openclaw_url();
+    
+    let mut client = OpenClawClient::new(&url);
+    client.set_token(token);
     
     let (response, _) = client.chat(&message, Some(&session_id)).await
         .map_err(|e| CommandError { message: e })?;

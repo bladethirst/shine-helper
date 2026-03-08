@@ -13,9 +13,70 @@ pub enum ConfigError {
     Keyring(String),
 }
 
+#[derive(Debug, Deserialize)]
+struct OpenClawConfigFile {
+    gateway: OpenClawGateway,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenClawGateway {
+    auth: OpenClawAuth,
+    #[serde(default)]
+    port: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenClawAuth {
+    mode: String,
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+}
+
+pub fn get_openclaw_token() -> Result<String, ConfigError> {
+    let path = PathBuf::from("/home/helikui/.openclaw/openclaw.json");
+    if !path.exists() {
+        return Err(ConfigError::Keyring("OpenClaw config not found".to_string()));
+    }
+    
+    let content = fs::read_to_string(&path)?;
+    let config: OpenClawConfigFile = serde_json::from_str(&content)?;
+    
+    match config.gateway.auth.mode.as_str() {
+        "token" => {
+            config.gateway.auth.token
+                .ok_or_else(|| ConfigError::Keyring("Token mode but no token found".to_string()))
+        }
+        "password" => {
+            config.gateway.auth.password
+                .ok_or_else(|| ConfigError::Keyring("Password mode but no password found".to_string()))
+        }
+        _ => Err(ConfigError::Keyring("Unknown auth mode".to_string())),
+    }
+}
+
+pub fn get_openclaw_url() -> String {
+    let path = PathBuf::from("/home/helikui/.openclaw/openclaw.json");
+    if !path.exists() {
+        return "http://localhost:18789".to_string();
+    }
+    
+    if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(config) = serde_json::from_str::<OpenClawConfigFile>(&content) {
+            if let Some(port) = config.gateway.port {
+                return format!("http://localhost:{}", port);
+            }
+        }
+    }
+    
+    "http://localhost:18789".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenClawConfig {
     pub url: String,
+    #[serde(skip_serializing, default)]
     pub token: String,
     pub use_local: bool,
     pub auto_start: bool,
@@ -64,7 +125,7 @@ impl Default for OpenClawConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:18789".to_string(),
-            token: "bca6dd74789ed4ebd4eb8761215de98d11f62c85eb16239a".to_string(),
+            token: String::new(),
             use_local: true,
             auto_start: true,
         }

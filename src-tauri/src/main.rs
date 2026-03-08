@@ -30,44 +30,41 @@ fn check_openclaw_running() -> bool {
     ).is_ok()
 }
 
-#[cfg(target_os = "windows")]
-fn get_node_exe(node_dir: &PathBuf) -> PathBuf {
-    node_dir.join("node.exe")
-}
-
-#[cfg(not(target_os = "windows"))]
-fn get_node_exe(node_dir: &PathBuf) -> PathBuf {
-    node_dir.join("bin").join("node")
-}
-
-fn start_openclaw_process(openclaw_dir: &str, node_dir: &str) -> Result<(), String> {
+fn start_openclaw_process(openclaw_dir: &str) -> Result<(), String> {
     let openclaw_path = PathBuf::from(openclaw_dir);
-    let node_path = PathBuf::from(node_dir);
     
-    let gateway_js = openclaw_path.join("gateway.js");
-    let data_dir = openclaw_path.join("data");
-    let node_exe = get_node_exe(&node_path);
+    let openclaw_mjs = openclaw_path.join("openclaw.mjs");
+    let node_modules = openclaw_path.join("node_modules");
     
-    if !node_exe.exists() {
-        return Err(format!("Node.js executable not found: {:?}", node_exe));
+    if !openclaw_mjs.exists() {
+        return Err("OpenClaw openclaw.mjs not found".to_string());
     }
     
-    if !gateway_js.exists() {
-        return Err("OpenClaw gateway.js not found".to_string());
+    if !node_modules.exists() {
+        return Err("OpenClaw node_modules not found".to_string());
     }
     
-    std::fs::create_dir_all(&data_dir).ok();
+    // 使用系统 node 命令
+    let node_cmd = if cfg!(target_os = "windows") {
+        "node.exe"
+    } else {
+        "node"
+    };
     
-    let mut cmd = Command::new(&node_exe);
-    cmd.arg(gateway_js.to_str().unwrap())
+    // 设置 OpenClaw 配置目录
+    let config_path = openclaw_path.join("data").join("openclaw.json");
+    let mut cmd = Command::new(node_cmd);
+    cmd.arg(openclaw_mjs.to_str().unwrap())
+       .arg("gateway")
+       .arg("run")
        .arg("--port")
        .arg("18789")
-       .arg("--data")
-       .arg(data_dir.to_str().unwrap())
+       .env("OPENCLAW_CONFIG_PATH", config_path.to_str().unwrap_or(""))
+       .current_dir(&openclaw_path)
        .spawn()
        .map_err(|e| format!("Failed to start OpenClaw: {}", e))?;
     
-    std::thread::sleep(Duration::from_secs(5));
+    std::thread::sleep(Duration::from_secs(8));
     
     Ok(())
 }
@@ -79,14 +76,17 @@ fn main() {
         .unwrap_or_default();
     
     let resources_dir = exe_dir.join("resources").join("openclaw");
-    let node_dir = resources_dir.join("node");
     let openclaw_dir = resources_dir.join("openclaw");
     
-    if resources_dir.exists() && !check_openclaw_running() {
+    // 检查 resources/openclaw 目录是否存在（即 bundled 模式）
+    let bundled_openclaw_dir = exe_dir.join("resources").join("openclaw");
+    let is_bundled = bundled_openclaw_dir.exists() && bundled_openclaw_dir.join("openclaw.mjs").exists();
+    
+    // 如果是 bundled 模式且 OpenClaw 未运行，则启动
+    if is_bundled && !check_openclaw_running() {
         println!("[Shine Helper] Starting OpenClaw...");
         if let Err(e) = start_openclaw_process(
-            openclaw_dir.to_str().unwrap_or(""),
-            node_dir.to_str().unwrap_or("")
+            bundled_openclaw_dir.to_str().unwrap_or("")
         ) {
             eprintln!("[Shine Helper] Warning: Failed to start OpenClaw: {}", e);
         }

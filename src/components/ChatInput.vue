@@ -25,13 +25,13 @@
       <!-- 麦克风按钮 -->
       <button
         @click="toggleVoice"
-        :disabled="!isSupported"
+        :disabled="!voskEnabled || !isSupported"
         :class="[
           'px-3 py-2 rounded-lg transition-colors',
           isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-          !isSupported && 'opacity-50 cursor-not-allowed'
+          (!voskEnabled || !isSupported) && 'opacity-50 cursor-not-allowed'
         ]"
-        :title="isSupported ? (isListening ? '停止录音' : '开始录音') : '语音输入不支持'"
+        :title="!voskEnabled ? '请先在设置中启用语音输入' : (isSupported ? (isListening ? '停止录音' : '开始录音') : '您的浏览器不支持语音输入')"
       >
         🎤
       </button>
@@ -98,12 +98,12 @@ const stopVoiceRecognition = () => {
 
 const toggleVoice = () => {
   if (!props.voskEnabled) {
-    alert('请先在设置中启用语音输入功能')
+    alert('语音输入已禁用\n\n请在设置页面：\n1. 进入配置页面\n2. 勾选"启用语音输入"\n3. 保存配置\n4. 返回聊天页面即可使用')
     return
   }
   
   if (!isSupported.value) {
-    alert('您的浏览器不支持语音输入')
+    alert('您的浏览器不支持语音输入\n\n请使用现代浏览器：\n- Chrome 90+\n- Edge 90+\n- Firefox 88+')
     return
   }
   

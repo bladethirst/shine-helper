@@ -223,6 +223,10 @@ const saveConfig = () => {
   }
   localStorage.setItem('shine_helper_config', JSON.stringify(fullConfig))
   console.log('Saving config:', fullConfig)
+  
+  // 触发配置更新事件，通知其他组件重新加载配置
+  window.dispatchEvent(new CustomEvent('config-updated', { detail: fullConfig }))
+  
   alert('配置已保存')
 }
 </script>

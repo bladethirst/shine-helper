@@ -110,6 +110,7 @@ impl OpenClawClient {
         let request = self.client.post(&url)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Content-Type", "application/json")
+            .header("x-openclaw-agent-id", "main")
             .json(&ChatRequest {
                 model: "openclaw".to_string(),
                 input: message.to_string(),
@@ -174,6 +175,7 @@ impl OpenClawClient {
         let request = self.client.post(&url)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Content-Type", "application/json")
+            .header("x-openclaw-agent-id", "main")
             .json(&ChatRequestStream {
                 model: "openclaw".to_string(),
                 input: message.to_string(),
