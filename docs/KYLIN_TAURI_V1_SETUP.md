@@ -10,7 +10,35 @@ Tauri v1 的已知限制：
 
 因此需要使用 Rust 后端来处理麦克风音频捕获。
 
-## 二、已完成的修改
+## 二、环境要求
+
+### 系统环境
+
+| 组件 | 版本要求 | 说明 |
+|------|----------|------|
+| OS | 银河麒麟 V10 SP1 | GLib 2.64.6, webkit2gtk-4.0 2.38.6 |
+| Rust | 1.70+ | `rustc --version` |
+| Node.js | 18+ | `node --version` |
+| npm | 9+ | `npm --version` |
+
+### 系统依赖安装
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  libwebkit2gtk-4.0-dev \
+  libssl-dev \
+  libgtk-3-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  libsoup2.4-dev \
+  libjavascriptcoregtk-4.0-dev \
+  pkg-config \
+  build-essential \
+  curl
+```
+
+## 三、项目配置修改
 
 ### 1. Cargo.toml 修改
 
@@ -28,29 +56,37 @@ name = "shine_helper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { version = "=1.5.0", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = ["shell-open"] }
+tauri = { version = "=1.5.0", features = [ "http-all", "shell-open"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# ... 其他依赖保持不变
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+bytes = "1"
+tokio-tungstenite = "0.21"
+futures-util = "0.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+keyring = "3"
+dirs = "5"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+log = "0.4"
+env_logger = "0.11"
+thiserror = "1"
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-
-[patch.crates-io]
-wry = { git = "https://github.com/tauri-apps/wry", rev = "wry-v0.22.6" }
 ```
 
 **关键变更：**
-- `tauri` 从 v2 降级到 `1.5`
-- `tauri-build` 从 v2 降级到 `1.5`
+- `tauri` 锁定到 `=1.5.0`（精确版本）
+- `tauri-build` 锁定到 `=1.5.0`
 - 添加 `[lib]` 配置
 - 添加 `rust-version = "1.70"`
-- 添加 `[patch.crates-io]` 强制降级 wry 到 0.22.6 解决兼容问题
-- `thiserror` 从 v2 降级到 v1
 
 ### 2. package.json 修改
 
@@ -63,103 +99,129 @@ wry = { git = "https://github.com/tauri-apps/wry", rev = "wry-v0.22.6" }
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.6.0",
-    // ...
+    "@tauri-apps/cli": "^1.6.0"
   }
 }
 ```
 
 **关键变更：**
-- `@tauri-apps/api`: `^2.0.0` → `^1.6.0`
-- `@tauri-apps/cli`: `^2.0.0` → `^1.6.0`
+- `@tauri-apps/api`: `^1.6.0`
+- `@tauri-apps/cli`: `^1.6.0`
 
 ### 3. 前端 API 导入修改
 
 将所有 `@tauri-apps/api/core` 改为 `@tauri-apps/api/tauri`：
-
 - `src/views/SkillsView.vue`
 - `src/views/ChatView.vue`
 
 ### 4. tauri.conf.json 修改
 
-从 Tauri v2 格式转换为 v1 格式，使用 `build.devPath` 而非 `build.devUrl`，`build.distDir` 而非 `build.frontendDist` 等。
+从 Tauri v2 格式转换为 v1 格式，使用 `build.devPath` 而非 `build.devUrl`，`build.distDir` 等。
 
-### 5. main.rs 修复
+## 四、Rust 安装
 
-- 修复内部属性 `#![cfg_attr]` 位置错误
-- 移除 `config` 模块的 Windows 条件编译（使其在所有平台可用）
-
-## 三、环境要求
-
-### 系统环境
-
-| 组件 | 版本要求 | 说明 |
-|------|----------|------|
-| OS | 银河麒麟 V10 SP1 | GLib 2.64.6, webkit2gtk-4.0 2.38.6 |
-| Rust | 1.70+ | `rustc --version` |
-| Node.js | 18+ | `node --version` |
-| npm | 9+ | `npm --version` |
-
-### 系统依赖安装
+### 安装 Rust
 
 ```bash
-sudo apt install -y \
-  libwebkit2gtk-4.0-dev \
-  libssl-dev \
-  libgtk-3-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev \
-  libsoup2.4-dev \
-  libjavascriptcoregtk-4.0-dev \
-  libglib2.0-dev \
-  libcairo2-dev \
-  libgdk-pixbuf2.0-dev \
-  libpango1.0-dev \
-  libatk1.0-dev \
-  pkg-config
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ```
 
-## 四、Rust 环境（已安装）
-
-### Cargo 路径配置
-
-Rust 已安装在 `~/.cargo/` 目录。每次构建前需要加载环境：
+### 配置环境变量
 
 ```bash
-source ~/.cargo/env
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-或添加到 `~/.bashrc` 永久生效：
+添加到 `~/.bashrc` 永久生效：
 
 ```bash
-echo 'source ~/.cargo/env' >> ~/.bashrc
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
 ```
 
 ### 验证安装
 
 ```bash
-source ~/.cargo/env
-cargo --version
-# 输出: cargo 1.94.0
-
 rustc --version
-# 输出: rustc 1.94.0
+cargo --version
 ```
 
-## 五、构建命令
+## 五、wry 兼容性问题解决（关键）
+
+### 问题描述
+
+编译时报错：
+```
+error[E0599]: no method named `set_enable_webgl` found for struct `webkit2gtk::Settings`
+```
+
+这是因为 wry 0.24.11 使用的 `webkit2gtk v0.18.2` 与系统 webkit2gtk-4.0 2.38.6 存在 API 兼容性问题。`webkit2gtk v0.18` 绑定的 `SettingsExt` trait 方法不兼容系统库。
+
+### 解决步骤
+
+1. **克隆 wry 源码**
+
+```bash
+cd /tmp
+git clone https://github.com/tauri-apps/wry.git wry-fix
+cd wry-fix
+git checkout wry-v0.24.11
+```
+
+2. **修复 webkitgtk/mod.rs**
+
+在 `src/webview/webkitgtk/mod.rs` 文件中，添加 `SettingsExt` 到 use 语句：
+
+```rust
+// 修改前
+use webkit2gtk::{
+  traits::*, LoadEvent, NavigationPolicyDecision, PolicyDecisionType, URIRequest,
+  UserContentInjectedFrames, UserContentManager, UserScript, UserScriptInjectionTime, WebView,
+  WebViewBuilder,
+};
+
+// 修改后
+use webkit2gtk::{
+  traits::*, LoadEvent, NavigationPolicyDecision, PolicyDecisionType, SettingsExt, URIRequest,
+  UserContentInjectedFrames, UserContentManager, UserScript, UserScriptInjectionTime, WebView,
+  WebViewBuilder,
+};
+```
+
+3. **在 Cargo.toml 中添加本地 patch**
+
+```toml
+[patch.crates-io]
+wry = { path = "/tmp/wry-fix" }
+```
+
+4. **清理并重新编译**
+
+```bash
+rm -rf src-tauri/target
+rm -f src-tauri/Cargo.lock
+npm run tauri build
+```
+
+### 问题根因
+
+`webkit2gtk` crate 0.18 版本在 Rust 层面使用了 `webkit2gtk_sys` 0.18，但系统安装的是 webkit2gtk-4.0 2.38.6。虽然版本号看起来兼容，但 Rust 绑定生成的部分 trait 方法（如 `SettingsExt`）未能正确导出到当前作用域。
+
+通过修改 wry 源码显式导入 `SettingsExt` trait，解决了这个问题。
+
+## 六、构建命令
 
 ### 开发模式
 
 ```bash
-source ~/.cargo/env
+export PATH="$HOME/.cargo/bin:$PATH"
 npm run tauri dev
 ```
 
 ### 生产构建
 
 ```bash
-source ~/.cargo/env
-rm -rf src-tauri/target  # 建议清理缓存
+export PATH="$HOME/.cargo/bin:$PATH"
+rm -rf src-tauri/target
 npm run tauri build
 ```
 
@@ -169,16 +231,17 @@ npm run tauri build
 - **RPM**: `src-tauri/target/release/bundle/rpm/shine-helper-1.0.0-1.x86_64.rpm`
 - **AppImage**: `src-tauri/target/release/bundle/appimage/shine-helper_1.0.0_amd64.AppImage`
 
-## 六、注意事项
+## 七、注意事项
 
-1. **wry 补丁**: 不要移除 `[patch.crates-io]` 中的 wry 降级配置，否则编译会失败
+1. **wry 补丁**: 必须使用本地路径 patch 方式，不能使用 git rev 方式
 2. **前端 API**: 确保使用 Tauri v1 的 API 路径 (`@tauri-apps/api/tauri`)
-3. **清理构建**: 遇到奇怪问题时，先执行 `rm -rf src-tauri/target`
-4. **Windows 子系统**: 如需 Windows 支持，保持 main.rs 中的 `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`
+3. **清理构建**: 遇到奇怪问题时，先执行 `rm -rf src-tauri/target` 和 `rm -f src-tauri/Cargo.lock`
+4. **tauri 版本**: 必须锁定到 `=1.5.0`，使用 `^1.5` 可能导致版本不一致
+5. **系统依赖**: 确保安装了所有 webkit2gtk 相关开发包
 
 ---
 
-**创建日期**: 2026-03-07  
+**创建日期**: 2026-03-08  
 **适用系统**: 银河麒麟桌面操作系统 V10 (SP1)  
 **Tauri 版本**: 1.5.x  
 **WebKit2GTK 版本**: 2.38.6

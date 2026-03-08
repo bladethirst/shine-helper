@@ -11,19 +11,20 @@ name = "shine_helper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "1.5", features = [] }
+tauri-build = { git = "https://github.com/tauri-apps/tauri.git", tag = "tauri-v1.5.4", features = [] }
 
 [dependencies]
-tauri = { version = "1.5", features = [ "http-all", "shell-open"] }
+tauri = { git = "https://github.com/tauri-apps/tauri.git", tag = "tauri-v1.5.4", features = [ "http-all", "shell-open"] }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri.git", tag = "tauri-v1.5.4" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.11", features = ["json", "stream"] }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 bytes = "1"
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
 keyring = "3"
 dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
@@ -37,4 +38,4 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [patch.crates-io]
-wry = { git = "https://github.com/tauri-apps/wry", rev = "wry-v0.22.6" }
+wry = { path = "/tmp/wry-fix" }
