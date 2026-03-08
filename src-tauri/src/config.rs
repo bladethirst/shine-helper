@@ -114,11 +114,31 @@ pub struct AppPreferences {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceConfig {
+    pub wake_word: String,
+    pub qwen_asr_url: String,
+    pub qwen_asr_api_key: String,
+    pub wake_sounds: Vec<String>,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            wake_word: "hey assistant".to_string(),
+            qwen_asr_url: "ws://localhost:8000/asr".to_string(),
+            qwen_asr_api_key: String::new(),
+            wake_sounds: vec!["在呢".to_string(), "我在".to_string()],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub openclaw: OpenClawConfig,
     pub market: MarketConfig,
     pub preferences: AppPreferences,
     pub vosk: VoskConfig,
+    pub voice: VoiceConfig,
 }
 
 impl Default for OpenClawConfig {
@@ -157,6 +177,7 @@ impl Default for AppConfig {
             market: MarketConfig::default(),
             preferences: AppPreferences::default(),
             vosk: VoskConfig::default(),
+            voice: VoiceConfig::default(),
         }
     }
 }

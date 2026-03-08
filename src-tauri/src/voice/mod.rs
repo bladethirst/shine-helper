@@ -2,10 +2,12 @@ pub mod asr_client;
 pub mod audio_capture;
 pub mod tts_player;
 pub mod wake_word;
+pub mod state_machine;
 
 pub use asr_client::*;
 pub use tts_player::TtsPlayer;
 pub use wake_word::{WakeWordDetector, contains_end_word};
+pub use state_machine::{VoiceStateMachine, VoiceState};
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
