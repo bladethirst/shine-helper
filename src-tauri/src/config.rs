@@ -108,6 +108,31 @@ impl Default for VoskConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceConfig {
+    pub enabled: bool,
+    pub wake_word: String,
+    pub wake_sounds: Vec<String>,
+    pub silence_timeout: u32,
+    pub end_words: Vec<String>,
+    pub qwen_asr_url: String,
+    pub qwen_asr_api_key: String,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            wake_word: "小 Shine".to_string(),
+            wake_sounds: vec!["在呢".to_string(), "你说".to_string(), "请讲".to_string()],
+            silence_timeout: 3000,
+            end_words: vec!["结束".to_string(), "停止".to_string()],
+            qwen_asr_url: "ws://localhost:5000".to_string(),
+            qwen_asr_api_key: "".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppPreferences {
     pub theme: String,
     pub language: String,
@@ -119,6 +144,7 @@ pub struct AppConfig {
     pub market: MarketConfig,
     pub preferences: AppPreferences,
     pub vosk: VoskConfig,
+    pub voice: VoiceConfig,
 }
 
 impl Default for OpenClawConfig {
@@ -157,6 +183,7 @@ impl Default for AppConfig {
             market: MarketConfig::default(),
             preferences: AppPreferences::default(),
             vosk: VoskConfig::default(),
+            voice: VoiceConfig::default(),
         }
     }
 }
