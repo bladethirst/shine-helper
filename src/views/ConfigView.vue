@@ -15,14 +15,8 @@
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
-        <div>
-          <label class="block text-sm font-medium mb-1">Token</label>
-          <input
-            v-model="config.openclaw.token"
-            type="password"
-            placeholder="请输入 OpenClaw Token"
-            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
+        <div class="text-sm text-gray-500">
+          Token 已从 OpenClaw 配置自动读取
         </div>
       </div>
     </div>
@@ -98,6 +92,42 @@
       </div>
     </div>
 
+    <!-- 语音唤醒配置 -->
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold mb-4">语音唤醒</h2>
+      <div class="space-y-4">
+        <div class="flex items-center gap-2">
+          <input
+            v-model="config.voice_wake.enabled"
+            type="checkbox"
+            id="voice_wake_enabled"
+            class="w-4 h-4 text-primary-600"
+          />
+          <label for="voice_wake_enabled" class="text-sm">启用语音唤醒</label>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">唤醒词</label>
+          <input
+            v-model="config.voice_wake.wake_word"
+            type="text"
+            placeholder="小 Shine"
+            :disabled="!config.voice_wake.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">静音超时 (毫秒)</label>
+          <input
+            v-model.number="config.voice_wake.silence_timeout"
+            type="number"
+            placeholder="3000"
+            :disabled="!config.voice_wake.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- 应用偏好 -->
     <div class="mb-8">
       <h2 class="text-lg font-semibold mb-4">应用偏好</h2>
@@ -138,91 +168,71 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/tauri'
 
-interface Config {
-  openclaw: {
-    url: string
-    token: string
-  }
-  market: {
-    url: string
-    enabled: boolean
-  }
-  preferences: {
-    theme: string
-    language: string
-  }
-  vosk: {
-    url: string
-    api_key: string
-    enabled: boolean
-    silence_timeout: number
-  }
+interface OpenClawConfig {
+  url: string
+  use_local: boolean
+  auto_start: boolean
 }
 
-const DEFAULT_TOKEN = 'bca6dd74789ed4ebd4eb8761215de98d11f62c85eb16239a'
+interface MarketConfig {
+  url: string
+  enabled: boolean
+}
 
-const config = ref<Config>({
-  openclaw: { url: 'http://localhost:18789', token: DEFAULT_TOKEN },
+interface VoskConfig {
+  url: string
+  api_key: string
+  enabled: boolean
+  silence_timeout: number
+}
+
+interface VoiceWakeConfig {
+  enabled: boolean
+  wake_word: string
+  wake_sounds: string[]
+  silence_timeout: number
+  end_words: string[]
+}
+
+interface AppPreferences {
+  theme: string
+  language: string
+}
+
+interface AppConfig {
+  openclaw: OpenClawConfig
+  market: MarketConfig
+  preferences: AppPreferences
+  vosk: VoskConfig
+  voice_wake: VoiceWakeConfig
+}
+
+const config = ref<AppConfig>({
+  openclaw: { url: 'http://localhost:18789', use_local: true, auto_start: true },
   market: { url: 'http://localhost:3001', enabled: true },
   preferences: { theme: 'system', language: 'zh-CN' },
-  vosk: { url: 'ws://192.168.150.26:5000', api_key: '', enabled: false, silence_timeout: 3000 }
+  vosk: { url: 'ws://192.168.150.26:2700', api_key: '', enabled: false, silence_timeout: 3000 },
+  voice_wake: { enabled: false, wake_word: '小 Shine', wake_sounds: ['在呢', '你说', '请讲'], silence_timeout: 3000, end_words: ['结束', '停止'] }
 })
 
-// 加载保存的配置
-onMounted(() => {
-  const saved = localStorage.getItem('shine_helper_config')
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved)
-      if (parsed.openclaw) {
-        config.value.openclaw.url = parsed.openclaw.serverUrl || config.value.openclaw.url
-        config.value.openclaw.token = parsed.openclaw.token || config.value.openclaw.token
-      }
-      if (parsed.market) {
-        config.value.market.url = parsed.market.url || config.value.market.url
-        config.value.market.enabled = parsed.market.enabled ?? config.value.market.enabled
-      }
-      if (parsed.preferences) {
-        config.value.preferences.theme = parsed.preferences.theme || config.value.preferences.theme
-        config.value.preferences.language = parsed.preferences.language || config.value.preferences.language
-      }
-      if (parsed.vosk) {
-        config.value.vosk.url = parsed.vosk.url || config.value.vosk.url
-        config.value.vosk.api_key = parsed.vosk.api_key || config.value.vosk.api_key
-        config.value.vosk.enabled = parsed.vosk.enabled ?? config.value.vosk.enabled
-        config.value.vosk.silence_timeout = parsed.vosk.silence_timeout || config.value.vosk.silence_timeout
-      }
-    } catch (e) {
-      console.error('Failed to load config:', e)
-    }
+onMounted(async () => {
+  try {
+    const loadedConfig = await invoke<AppConfig>('get_app_config')
+    config.value = loadedConfig
+  } catch (e) {
+    console.error('Failed to load config from backend:', e)
   }
 })
 
-const saveConfig = () => {
-  // 保存完整配置
-  const fullConfig = {
-    openclaw: {
-      serverUrl: config.value.openclaw.url,
-      token: config.value.openclaw.token
-    },
-    market: {
-      url: config.value.market.url,
-      enabled: config.value.market.enabled
-    },
-    preferences: {
-      theme: config.value.preferences.theme,
-      language: config.value.preferences.language
-    },
-    vosk: {
-      url: config.value.vosk.url,
-      api_key: config.value.vosk.api_key,
-      enabled: config.value.vosk.enabled,
-      silence_timeout: config.value.vosk.silence_timeout
-    }
+const saveConfig = async () => {
+  try {
+    await invoke('save_app_config', { config: config.value })
+    alert('配置已保存')
+  } catch (e) {
+    console.error('Failed to save config:', e)
+    alert('保存配置失败: ' + e)
   }
-  localStorage.setItem('shine_helper_config', JSON.stringify(fullConfig))
-  console.log('Saving config:', fullConfig)
-  alert('配置已保存')
 }
 </script>

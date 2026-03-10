@@ -9,7 +9,7 @@ export class TauriVoskProvider implements SpeechProvider {
   private errorCallback: ((error: Error) => void) | null = null
   private endCallback: (() => void) | null = null
   private startCallback: (() => void) | null = null
-  private voskUrl: string = 'ws://192.168.150.26:5000'
+  private voskUrl: string = 'ws://192.168.150.26:2700'
   private voskApiKey: string = ''
   private silenceTimeout: number = 3000
   private unlistenResult: UnlistenFn | null = null
@@ -27,6 +27,8 @@ export class TauriVoskProvider implements SpeechProvider {
 
   async start(config: SpeechConfig): Promise<void> {
     this.silenceTimeout = config.silenceTimeout ?? 3000
+    
+    console.log('[TauriVoskProvider] Starting with URL:', this.voskUrl)
 
     try {
       this.unlistenResult = await listen<{ text: string; is_final: boolean }>('voice_result', (event) => {

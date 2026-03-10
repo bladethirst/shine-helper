@@ -73,7 +73,7 @@ const {
   toggle: toggleVoiceRecognition,
   reset: resetVoice
 } = useVoiceRecognition({
-  voskUrl: props.voskUrl || 'ws://localhost:5000',
+  voskUrl: props.voskUrl || 'ws://192.168.150.26:2700',
   voskApiKey: props.voskApiKey || '',
   silenceTimeout: 3000,
 })

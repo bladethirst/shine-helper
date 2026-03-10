@@ -32,6 +32,12 @@ log = "0.4"
 env_logger = "0.11"
 thiserror = "1"
 
+# 音频相关依赖 (语音唤醒功能)
+cpal = "0.15"           # 跨平台音频捕获
+rodio = "0.17"          # 音频播放
+dasp_sample = "0.11"    # 音频采样转换
+hound = "3.5"           # WAV 音频处理
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

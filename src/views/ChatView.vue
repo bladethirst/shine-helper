@@ -69,7 +69,7 @@ const isLoading = ref(false)
 
 // Vosk 配置
 const voskEnabled = ref(false)
-const voskUrl = ref('ws://192.168.150.26:5000')
+const voskUrl = ref('ws://192.168.150.26:2700')
 const voskApiKey = ref('')
 let unlistenChunk: UnlistenFn | null = null
 let unlistenError: UnlistenFn | null = null
@@ -83,20 +83,29 @@ function scrollToBottom() {
   })
 }
 
+interface AppConfig {
+  openclaw: {
+    url: string
+    token: string
+    use_local: boolean
+    auto_start: boolean
+  }
+  vosk: {
+    url: string
+    api_key: string
+    enabled: boolean
+    silence_timeout: number
+  }
+}
+
 onMounted(async () => {
-  // 加载配置
-  const savedConfig = localStorage.getItem('shine_helper_config')
-  if (savedConfig) {
-    try {
-      const config = JSON.parse(savedConfig)
-      if (config.vosk) {
-        voskEnabled.value = config.vosk.enabled ?? false
-        voskUrl.value = config.vosk.url || 'ws://192.168.150.26:5000'
-        voskApiKey.value = config.vosk.api_key || ''
-      }
-    } catch (e) {
-      console.error('Failed to load config:', e)
-    }
+  try {
+    const config = await invoke<AppConfig>('get_app_config')
+    voskEnabled.value = config.vosk.enabled
+    voskUrl.value = config.vosk.url
+    voskApiKey.value = config.vosk.api_key
+  } catch (e) {
+    console.error('Failed to load config:', e)
   }
   
   try {

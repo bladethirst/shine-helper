@@ -9,8 +9,10 @@ mod voice;
 
 use commands::{
     AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message, send_message_stream,
-    SkillsState, get_local_skills, install_skill, uninstall_skill
+    SkillsState, get_local_skills, install_skill, uninstall_skill,
+    VoiceWakeState, start_voice_wake, stop_voice_wake
 };
+use config::{get_app_config, save_app_config};
 use voice::{
     list_microphones, start_voice_recognition, stop_voice_recognition
 };
@@ -101,6 +103,7 @@ fn main() {
             openclaw_sessions: Mutex::new(HashMap::new()),
         })
         .manage(SkillsState { manager: Mutex::new(skills_manager) })
+        .manage(VoiceWakeState::new())
         .invoke_handler(tauri::generate_handler![
             create_session,
             list_sessions,
@@ -114,7 +117,11 @@ fn main() {
             uninstall_skill,
             list_microphones,
             start_voice_recognition,
-            stop_voice_recognition
+            stop_voice_recognition,
+            start_voice_wake,
+            stop_voice_wake,
+            get_app_config,
+            save_app_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

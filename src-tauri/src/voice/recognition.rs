@@ -26,7 +26,7 @@ pub struct VoiceStreamHandle {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct VoskConfig {
+pub struct VoiceRecognitionConfig {
     pub url: String,
     pub api_key: Option<String>,
 }
@@ -66,7 +66,7 @@ pub fn list_microphones() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn start_voice_recognition(
     app: AppHandle,
-    vosk_config: VoskConfig,
+    vosk_config: VoiceRecognitionConfig,
     silence_timeout_ms: Option<u64>,
 ) -> Result<String, String> {
     let stream_id = uuid::Uuid::new_v4().to_string();
@@ -126,9 +126,10 @@ async fn run_voice_capture(
     mut stop_rx: mpsc::Receiver<()>,
     _audio_tx: mpsc::Sender<Vec<u8>>,
 ) -> Result<(), String> {
+    log::info!("Connecting to Vosk server at: {}", vosk_url);
     let (ws_stream, _) = connect_async(vosk_url)
         .await
-        .map_err(|e| format!("Failed to connect to Vosk: {}", e))?;
+        .map_err(|e| format!("Failed to connect to Vosk at {}: {}", vosk_url, e))?;
     
     let (mut write, mut read) = ws_stream.split();
 
@@ -142,23 +143,27 @@ async fn run_voice_capture(
     let mut child = Command::new("arecord")
         .args(["-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("Failed to start arecord: {}", e))?;
+        .map_err(|e| format!("Failed to start arecord: {}. Ensure user has audio group permissions. Try: usermod -aG audio $USER", e))?;
 
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    
-    {
-        let mut state = get_voice_state().lock().unwrap();
-        if let Some(handle) = state.active_streams.get_mut(stream_id) {
-            handle.child = Some(child);
-        }
-    }
+    let mut stderr = child.stderr.take();
 
     use std::sync::mpsc as std_mpsc;
     let (std_audio_tx, std_audio_rx) = std_mpsc::channel::<Vec<u8>>();
-    
+
     let audio_tx_for_thread = std_audio_tx.clone();
+    thread::spawn(move || {
+        if let Some(stderr) = stderr {
+            let mut stderr_reader = std::io::BufReader::new(stderr);
+            let mut stderr_buffer = String::new();
+            if stderr_reader.read_to_string(&mut stderr_buffer).is_ok() && !stderr_buffer.is_empty() {
+                eprintln!("[VoiceCapture] arecord stderr: {}", stderr_buffer);
+            }
+        }
+    });
+
     thread::spawn(move || {
         let mut reader = std::io::BufReader::new(stdout);
         let mut buffer = vec![0u8; 32000];
@@ -174,6 +179,13 @@ async fn run_voice_capture(
             }
         }
     });
+
+    {
+        let mut state = get_voice_state().lock().unwrap();
+        if let Some(handle) = state.active_streams.get_mut(stream_id) {
+            handle.child = Some(child);
+        }
+    }
     
     let mut last_audio_time = std::time::Instant::now();
     let silence_timeout = std::time::Duration::from_millis(silence_timeout_ms);
@@ -185,7 +197,6 @@ async fn run_voice_capture(
                 break;
             }
             _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
-                // Try to receive audio data without blocking
                 while let Ok(data) = std_audio_rx.try_recv() {
                     last_audio_time = std::time::Instant::now();
                     if write.send(Message::Binary(data)).await.is_err() {

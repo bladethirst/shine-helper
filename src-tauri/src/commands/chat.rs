@@ -77,8 +77,16 @@ pub async fn send_message_stream(
     message: String,
 ) -> Result<(), CommandError> {
     let config = crate::config::load_config().unwrap_or_default();
-    let mut client = OpenClawClient::new(&config.openclaw.url);
-    client.set_token(config.openclaw.token);
+    let url = &config.openclaw.url;
+    let mut client = OpenClawClient::new(url);
+    
+    let token = crate::config::get_openclaw_token()
+        .unwrap_or_else(|| "no-token".to_string());
+    
+    eprintln!("[DEBUG] OpenClaw URL: {}", url);
+    eprintln!("[DEBUG] OpenClaw token: {} (len: {})", &token[..token.len().min(8)], token.len());
+    
+    client.set_token(token);
     
     let mut full_response = String::new();
     
@@ -116,8 +124,17 @@ pub async fn send_message(
     message: String,
 ) -> Result<String, CommandError> {
     let config = crate::config::load_config().unwrap_or_default();
-    let mut client = OpenClawClient::new(&config.openclaw.url);
-    client.set_token(config.openclaw.token);
+    let url = &config.openclaw.url;
+    let mut client = OpenClawClient::new(url);
+    
+    let token = crate::config::get_openclaw_token()
+        .unwrap_or_else(|| "no-token".to_string());
+    
+    eprintln!("[DEBUG] OpenClaw URL: {}", url);
+    eprintln!("[DEBUG] OpenClaw token: {} (len: {})", &token[..token.len().min(8)], token.len());
+    eprintln!("[DEBUG] Full request will be: POST {} with Authorization: Bearer {}", url, &token[..token.len().min(8)]);
+    
+    client.set_token(token);
     
     let (response, _) = client.chat(&message, Some(&session_id)).await
         .map_err(|e| CommandError { message: e })?;

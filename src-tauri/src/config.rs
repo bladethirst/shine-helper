@@ -16,7 +16,6 @@ pub enum ConfigError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenClawConfig {
     pub url: String,
-    pub token: String,
     pub use_local: bool,
     pub auto_start: bool,
 }
@@ -35,10 +34,31 @@ pub struct VoskConfig {
     pub silence_timeout: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VoiceWakeConfig {
+    pub enabled: bool,
+    pub wake_word: String,
+    pub wake_sounds: Vec<String>,
+    pub silence_timeout: u32,
+    pub end_words: Vec<String>,
+}
+
+impl Default for VoiceWakeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            wake_word: "小 Shine".to_string(),
+            wake_sounds: vec!["在呢".to_string(), "你说".to_string(), "请讲".to_string()],
+            silence_timeout: 3000,
+            end_words: vec!["结束".to_string(), "停止".to_string()],
+        }
+    }
+}
+
 impl Default for VoskConfig {
     fn default() -> Self {
         Self {
-            url: "ws://localhost:5000".to_string(),
+            url: "ws://192.168.150.26:2700".to_string(),
             api_key: "".to_string(),
             enabled: false,
             silence_timeout: 3000,
@@ -58,13 +78,13 @@ pub struct AppConfig {
     pub market: MarketConfig,
     pub preferences: AppPreferences,
     pub vosk: VoskConfig,
+    pub voice_wake: VoiceWakeConfig,
 }
 
 impl Default for OpenClawConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:18789".to_string(),
-            token: "bca6dd74789ed4ebd4eb8761215de98d11f62c85eb16239a".to_string(),
             use_local: true,
             auto_start: true,
         }
@@ -96,6 +116,7 @@ impl Default for AppConfig {
             market: MarketConfig::default(),
             preferences: AppPreferences::default(),
             vosk: VoskConfig::default(),
+            voice_wake: VoiceWakeConfig::default(),
         }
     }
 }
@@ -105,6 +126,42 @@ fn get_config_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("shine_helper")
         .join("config.json")
+}
+
+fn get_openclaw_config_path() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("/root"))
+        .join(".openclaw")
+        .join("openclaw.json")
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenClawGatewayAuth {
+    token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenClawGateway {
+    auth: OpenClawGatewayAuth,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenClawFileConfig {
+    gateway: OpenClawGateway,
+}
+
+pub fn get_openclaw_token() -> Option<String> {
+    let path = get_openclaw_config_path();
+    eprintln!("[DEBUG] Loading OpenClaw token from: {:?}", path);
+    if !path.exists() {
+        eprintln!("[DEBUG] Config file does not exist");
+        return None;
+    }
+    
+    let content = fs::read_to_string(&path).ok()?;
+    let config: OpenClawFileConfig = serde_json::from_str(&content).ok()?;
+    eprintln!("[DEBUG] Token loaded successfully, length: {}", config.gateway.auth.token.len());
+    Some(config.gateway.auth.token)
 }
 
 pub fn load_config() -> Result<AppConfig, ConfigError> {
@@ -128,4 +185,14 @@ pub fn save_config(config: &AppConfig) -> Result<(), ConfigError> {
     let content = serde_json::to_string_pretty(config)?;
     fs::write(&path, content)?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_app_config() -> Result<AppConfig, String> {
+    load_config().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_app_config(config: AppConfig) -> Result<(), String> {
+    save_config(&config).map_err(|e| e.to_string())
 }
