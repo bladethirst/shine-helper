@@ -10,7 +10,7 @@ mod voice;
 use commands::{
     AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message, send_message_stream,
     SkillsState, get_local_skills, install_skill, uninstall_skill,
-    VoiceWakeState, start_voice_wake, stop_voice_wake
+    VoiceWakeState, start_voice_wake, stop_voice_wake, test_voice_wake_detection, focus_window
 };
 use config::{get_app_config, save_app_config};
 use voice::{
@@ -18,6 +18,7 @@ use voice::{
 };
 use db::Database;
 use skills::SkillsManager;
+use tauri::Manager;
 use std::sync::Mutex;
 use std::collections::HashMap;
 use std::process::Command;
@@ -98,6 +99,7 @@ fn main() {
     let skills_manager = SkillsManager::new();
     
     tauri::Builder::default()
+        // Manage state
         .manage(AppState { 
             db: Mutex::new(db),
             openclaw_sessions: Mutex::new(HashMap::new()),
@@ -120,6 +122,8 @@ fn main() {
             stop_voice_recognition,
             start_voice_wake,
             stop_voice_wake,
+            focus_window,
+            test_voice_wake_detection,
             get_app_config,
             save_app_config
         ])

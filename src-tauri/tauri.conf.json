@@ -22,7 +22,10 @@
         "scope": ["http://**", "https://**"]
       },
       "window": {
-        "all": false
+        "all": false,
+        "show": true,
+        "unminimize": true,
+        "setFocus": true
       }
     },
     "bundle": {

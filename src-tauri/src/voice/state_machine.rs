@@ -2,16 +2,8 @@ use crate::voice::{AudioCapture, WakeWordDetector, VoskAsrClient, TtsPlayer, Asr
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum VoiceState {
-    Idle,       // 待机
-    Waking,     // 唤醒中
-    Listening,  // 聆听中
-    Processing, // 处理中
-}
-
 pub struct VoiceStateMachine {
-    pub state: VoiceState,
+    pub state: super::VoiceState,
     pub audio_capture: AudioCapture,
     pub wake_detector: WakeWordDetector,
     pub tts_player: TtsPlayer,
@@ -29,7 +21,7 @@ impl VoiceStateMachine {
         silence_timeout: u32,
     ) -> Result<Self, String> {
         Ok(Self {
-            state: VoiceState::Idle,
+            state: super::VoiceState::Idle,
             audio_capture: AudioCapture::new()?,
             wake_detector: WakeWordDetector::new(&wake_word),
             tts_player: TtsPlayer::new(wake_sounds.clone()),
@@ -40,7 +32,7 @@ impl VoiceStateMachine {
         })
     }
 
-    pub fn transition_to(&mut self, new_state: VoiceState) {
+    pub fn transition_to(&mut self, new_state: super::VoiceState) {
         println!("[Voice] State: {:?} -> {:?}", self.state, new_state);
         self.state = new_state;
     }
