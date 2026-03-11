@@ -41,6 +41,16 @@ pub struct VoiceWakeConfig {
     pub wake_sounds: Vec<String>,
     pub silence_timeout: u32,
     pub end_words: Vec<String>,
+    /// Vosk ASR 服务地址（与 vosk.url 共享配置，此处为冗余设计便于单独配置）
+    #[serde(default = "default_vosk_url")]
+    pub vosk_url: String,
+    /// Vosk ASR API Key
+    #[serde(default)]
+    pub vosk_api_key: String,
+}
+
+fn default_vosk_url() -> String {
+    "ws://192.168.150.26:2700".to_string()
 }
 
 impl Default for VoiceWakeConfig {
@@ -51,6 +61,8 @@ impl Default for VoiceWakeConfig {
             wake_sounds: vec!["在呢".to_string(), "你说".to_string(), "请讲".to_string()],
             silence_timeout: 3000,
             end_words: vec!["结束".to_string(), "停止".to_string()],
+            vosk_url: default_vosk_url(),
+            vosk_api_key: "".to_string(),
         }
     }
 }

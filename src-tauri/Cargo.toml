@@ -37,6 +37,7 @@ cpal = "0.15"           # 跨平台音频捕获
 rodio = "0.17"          # 音频播放
 dasp_sample = "0.11"    # 音频采样转换
 hound = "3.5"           # WAV 音频处理
+rand = "0.8"            # 随机选择 TTS 回复
 
 [features]
 default = ["custom-protocol"]
