@@ -106,6 +106,39 @@ fn main() {
         })
         .manage(SkillsState { manager: Mutex::new(skills_manager) })
         .manage(VoiceWakeState::new())
+        .setup(|app| {
+            // Auto-start voice wake service when app starts if it's enabled in config
+            let app_handle = app.handle();
+            std::thread::spawn(move || {
+                // Wait a little for initialization before attempting auto-start
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                
+                match get_app_config() {
+                    Ok(config) => {
+                        if config.voice_wake.enabled {
+                            println!("[AutoVoiceWake] Auto-starting voice wake service...");
+                            // Use tokio runtime to call the async start_voice_wake function
+                            let rt = tokio::runtime::Runtime::new().unwrap();
+                            rt.block_on(async move {
+                                let state = app_handle.state::<VoiceWakeState>();
+                                let result = crate::commands::voice_wake::start_voice_wake(state, app_handle.clone()).await;
+                                if let Err(e) = result {
+                                    eprintln!("[AutoVoiceWake] Failed to auto-start voice wake: {}", e);
+                                } else {
+                                    println!("[AutoVoiceWake] Successfully auto-started voice wake service");
+                                }
+                            });
+                        } else {
+                            println!("[AutoVoiceWake] Voice wake disabled in config - skipping auto-start");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[AutoVoiceWake] Failed to load config for auto-start: {}", e);
+                    }
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             create_session,
             list_sessions,
