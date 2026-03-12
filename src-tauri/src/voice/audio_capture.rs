@@ -48,9 +48,9 @@ impl AudioCapture {
                 &config.into(),
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
                     frame_count += 1;
-                    if frame_count % 100 == 0 {
-                        println!("[AudioCapture] Captured {} frames, data.len={}", frame_count, data.len());
-                    }
+                    // if frame_count % 100 == 0 {
+                    //     println!("[AudioCapture] Captured {} frames, data.len={}", frame_count, data.len());
+                    // }
                     if is_running.load(Ordering::SeqCst) {
                         let _ = sender_clone.send(data.to_vec());
                     }

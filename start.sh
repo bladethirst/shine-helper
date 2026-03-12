@@ -37,7 +37,7 @@ if [ ! -x "$SHINE_BIN" ]; then
     echo "  - $SCRIPT_DIR/src-tauri/target/release/shine-helper"
     echo "  - $SCRIPT_DIR/src-tauri/target/debug/shine-helper"
     echo ""
-    echo "请先运行: cd src-tauri && cargo build --release"
+    echo "请先运行：cd src-tauri && cargo build --release"
     read -p "按回车键退出..."
     exit 1
 fi
@@ -60,17 +60,25 @@ else
     cd "$OPENCLAW_APP_DIR"
     nohup "$NODE_DIR/bin/node" "$OPENCLAW_APP_DIR/openclaw.mjs" gateway run --port 18789 > /tmp/openclaw.log 2>&1 &
     OPENCLAW_PID=$!
-    
+
     echo "[Shine Helper] 等待服务启动..."
     sleep 8
-    
+
     # 再次检查
     if netstat -ano 2>/dev/null | grep -q ":18789 " || ss -tuln 2>/dev/null | grep -q ":18789 "; then
         echo "[Shine Helper] OpenClaw 服务已就绪"
     else
-        echo "[警告] OpenClaw 可能启动失败，检查日志: /tmp/openclaw.log"
+        echo "[错误] OpenClaw 服务启动失败"
         echo "日志内容:"
         tail -20 /tmp/openclaw.log
+        echo ""
+        echo "[提示] 可能原因:"
+        echo "  1. Node.js 未正确安装到 resources/openclaw/node 目录"
+        echo "  2. OpenClaw 配置文件错误"
+        echo "  3. 端口 18789 被其他程序占用"
+        echo ""
+        read -p "按回车键退出..."
+        exit 1
     fi
 fi
 
