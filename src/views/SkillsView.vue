@@ -212,11 +212,18 @@ const installedSkills = ref<LocalSkill[]>([])
 const installingIds = ref<Set<string>>(new Set())
 const detailModal = ref<DetailModal>({ show:false, loading:false, installing:false, isInstalled:false, skill:null, marketSkill:null, detail:null })
 
-function getMarketConfig() {
+let cachedMarketConfig: { url: string; apiKey: string } | null = null
+
+async function getMarketConfig() {
+  if (cachedMarketConfig) return cachedMarketConfig
   try {
-    const p = JSON.parse(localStorage.getItem('shine_helper_config') || '{}')
-    return { url: p?.market?.url || 'http://127.0.0.1:5000', apiKey: p?.market?.api_key || '' }
-  } catch { return { url: 'http://127.0.0.1:5000', apiKey: '' } }
+    const config = await invoke<any>('get_app_config')
+    cachedMarketConfig = { url: config?.market?.url || 'http://localhost:3001', apiKey: config?.market?.api_key || '' }
+    return cachedMarketConfig
+  } catch (e) {
+    console.warn('Failed to load market config from backend:', e)
+    return { url: 'http://localhost:3001', apiKey: '' }
+  }
 }
 
 async function httpGet(url: string, headers: Record<string,string> = {}) {
@@ -303,7 +310,7 @@ function formatSize(b: number) {
 async function fetchMarketSkills() {
   loading.value=true; error.value=null
   try {
-    const { url, apiKey } = getMarketConfig()
+    const { url, apiKey } = await getMarketConfig()
     const h: Record<string,string> = {}; if (apiKey) h['X-API-Key']=apiKey
     marketSkills.value = await httpGet(`${url}/api/skills`, h) as MarketSkill[]
   } catch(e: any) { error.value = e?.message || '\u65E0\u6CD5\u8FDE\u63A5\u5230 Skills \u670D\u52A1' }
@@ -326,7 +333,7 @@ async function loadSkillsDir() {
 async function openMarketDetail(skill: MarketSkill) {
   detailModal.value = { show:true, loading:true, installing:false, isInstalled:isInstalled(skill.id), skill, marketSkill:skill, detail:null }
   try {
-    const { url, apiKey } = getMarketConfig()
+    const { url, apiKey } = await getMarketConfig()
     const h: Record<string,string> = {}; if (apiKey) h['X-API-Key']=apiKey
     detailModal.value.detail = await httpGet(`${url}/api/skill/${skill.file_name}/detail`, h) as SkillDetail
   } catch(e) { console.warn('detail:', e) }
@@ -349,7 +356,7 @@ async function installSkill(skill: MarketSkill) {
   }
   installingIds.value = new Set([...installingIds.value, skill.id])
   try {
-    const { url, apiKey } = getMarketConfig()
+    const { url, apiKey } = await getMarketConfig()
     const h: Record<string,string> = {}; if (apiKey) h['X-API-Key']=apiKey
     const data = await httpGetBinary(`${url}/api/download/${skill.parent_dir}/${skill.file_name}`, h)
     await invoke('install_skill', { skillId:skill.id, skillName:skill.name, skillDescription:skill.description||'', skillVersion:skill.version||'', skillFileName:skill.file_name, skillData:Array.from(data) })

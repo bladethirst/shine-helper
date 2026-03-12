@@ -23,6 +23,7 @@ pub struct OpenClawConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketConfig {
     pub url: String,
+    pub api_key: String,
     pub enabled: bool,
 }
 
@@ -119,6 +120,7 @@ impl Default for MarketConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:3001".to_string(),
+            api_key: "".to_string(),
             enabled: true,
         }
     }
