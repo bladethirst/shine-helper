@@ -86,15 +86,26 @@ impl VoiceWakeState {
 pub fn fuzzy_match_keyword(input: &str, keyword: &str) -> bool {
     let input = input.to_lowercase().trim().to_string();
     let keyword = keyword.to_lowercase().trim().to_string();
-    
+
+    // 空输入不匹配
+    if input.is_empty() {
+        return false;
+    }
+
     if input == keyword {
         return true;
     }
-    
-    if input.contains(&keyword) || keyword.contains(&input) {
+
+    // 只有当 input 非空时才检查包含关系
+    if input.contains(&keyword) {
         return true;
     }
-    
+
+    // 只有当 keyword 非空且 input 长度大于 1 时才检查反向包含
+    if !input.is_empty() && !keyword.is_empty() && keyword.contains(&input) {
+        return true;
+    }
+
     let pinyin_variants = vec![
         ("shine", "晒"),
         ("shine", "小晒"),
@@ -102,19 +113,19 @@ pub fn fuzzy_match_keyword(input: &str, keyword: &str) -> bool {
         ("小 shine", "小 shai"),
         ("shine", "shai"),
     ];
-    
+
     for (from, to) in pinyin_variants {
         let variant_keyword = keyword.replace(from, to);
         if input == variant_keyword || input.contains(&variant_keyword) {
             return true;
         }
     }
-    
+
     let distance = levenshtein_distance(&input, &keyword);
     if distance <= 2 && input.len() > 2 && keyword.len() > 2 {
         return true;
     }
-    
+
     false
 }
 
@@ -387,10 +398,10 @@ async fn run_wake_loop(
         }
         
         idle_iterations += 1;
-        if idle_iterations % 20 == 1 {
-            println!("[VoiceWake] Loop iteration {}, state={:?}, last_recv={:?} ago", 
-                idle_iterations, state, last_recv_time.elapsed());
-        }
+        // if idle_iterations % 20 == 1 {
+        //     println!("[VoiceWake] Loop iteration {}, state={:?}, last_recv={:?} ago", 
+        //         idle_iterations, state, last_recv_time.elapsed());
+        // }
         
         match state {
             WakeLoopState::Idle => {
