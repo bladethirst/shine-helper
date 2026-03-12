@@ -3,6 +3,7 @@ use std::io::{BufReader, Cursor};
 use std::path::PathBuf;
 use rand::prelude::SliceRandom;
 
+#[derive(Clone)]
 pub struct TtsPlayer {
     wake_sounds: Vec<String>,
     resource_dir: Option<PathBuf>,
@@ -55,11 +56,11 @@ impl TtsPlayer {
         let sink = Sink::try_new(&stream_handle)
             .map_err(|e| format!("Failed to create sink: {}", e))?;
         
-        let duration = Duration::from_millis(300);
+        let duration = Duration::from_millis(500);
         let sample_rate = 44100;
         let frequency = 440.0;
         
-        let samples: Vec<f32> = (0..(sample_rate * duration.as_secs() as u32))
+        let samples: Vec<f32> = (0..(sample_rate * duration.as_secs() as u32 + sample_rate / 2))
             .map(|t| {
                 let time = t as f32 / sample_rate as f32;
                 (frequency * time * 2.0 * std::f32::consts::PI).sin() * 0.3
@@ -81,7 +82,11 @@ impl TtsPlayer {
             .map_err(|e| format!("Failed to decode audio: {}", e))?;
         
         sink.append(source);
-        std::thread::sleep(duration);
+        
+        // 等待播放完成 - 使用 sleep_until_end
+        sink.sleep_until_end();
+        
+        println!("[TTS] Beep sound played");
         
         Ok(())
     }
@@ -128,9 +133,8 @@ impl TtsPlayer {
         
         sink.append(source);
         
-        while !sink.empty() {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        // 等待播放完成
+        sink.sleep_until_end();
         
         println!("[TTS] Audio file played: {}", file_path);
         

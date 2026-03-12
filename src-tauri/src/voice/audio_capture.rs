@@ -19,9 +19,9 @@ impl AudioCapture {
 
     pub fn start(
         &mut self,
-        sample_rate: u32,
-        channels: u16,
-        sender: mpsc::Sender<Vec<f32>>,
+        _sample_rate: u32,
+        _channels: u16,
+        sender: mpsc::UnboundedSender<Vec<f32>>,
     ) -> Result<(), String> {
         let host = cpal::default_host();
         let device = host
@@ -32,18 +32,27 @@ impl AudioCapture {
             .default_input_config()
             .map_err(|e| e.to_string())?;
 
+        println!("[AudioCapture] Using device: {}", device.name().unwrap_or_else(|_| "Unknown".to_string()));
+        println!("[AudioCapture] Sample rate: {}, Channels: {}", config.sample_rate().0, config.channels());
+
         self.is_running.store(true, Ordering::SeqCst);
 
         let is_running = Arc::clone(&self.is_running);
+        let sender_clone = sender.clone();
 
         let err_fn = |err| eprintln!("[AudioCapture] Error: {}", err);
 
+        let mut frame_count = 0u32;
         let stream = device
             .build_input_stream(
                 &config.into(),
                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    frame_count += 1;
+                    if frame_count % 100 == 0 {
+                        println!("[AudioCapture] Captured {} frames, data.len={}", frame_count, data.len());
+                    }
                     if is_running.load(Ordering::SeqCst) {
-                        let _ = sender.try_send(data.to_vec());
+                        let _ = sender_clone.send(data.to_vec());
                     }
                 },
                 err_fn,
@@ -54,6 +63,8 @@ impl AudioCapture {
         stream
             .play()
             .map_err(|e| e.to_string())?;
+
+        println!("[AudioCapture] Stream started");
 
         self.stream = Some(stream);
         Ok(())

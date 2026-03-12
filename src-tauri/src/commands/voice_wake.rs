@@ -147,10 +147,11 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WakeLoopState {
-    Idle,
-    Waking,
-    Listening,
-    Processing,
+    Idle,           // 待机，仅检测能量
+    Verifying,      // 验证中，连接 ASR 检测是否为唤醒词
+    Waking,         // 唤醒中，播放 TTS 响应
+    Listening,      // 监听中，连接 ASR 识别用户指令
+    Processing,     // 处理中，接收 ASR 结果
 }
 
 #[tauri::command]
@@ -174,7 +175,10 @@ pub async fn start_voice_wake(
     
     let is_running_clone = Arc::clone(&state.is_running);
     
+    println!("[VoiceWake] Spawning wake loop task...");
+    
     tokio::spawn(async move {
+        println!("[VoiceWake] Task started, calling run_wake_loop...");
         run_wake_loop(
             is_running_clone,
             app,
@@ -185,7 +189,10 @@ pub async fn start_voice_wake(
             vosk_api_key,
             end_words,
         ).await;
+        println!("[VoiceWake] run_wake_loop returned");
     });
+    
+    println!("[VoiceWake] Spawn complete");
     
     Ok(())
 }
@@ -227,9 +234,11 @@ pub async fn get_voice_wake_status(state: State<'_, VoiceWakeState>) -> Result<s
 }
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::sync::atomic::{AtomicBool, Ordering};
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use std::time::{Duration, Instant};
 use crate::voice::tts_player::TtsPlayer;
 use std::thread;
@@ -246,72 +255,367 @@ async fn run_wake_loop(
 ) {
     println!("[VoiceWake] Starting wake loop with wake_word='{}', vosk_url={}", wake_word, vosk_url);
     
+    // 使用无界 channel 避免音频数据丢失
+    let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
+    
+    println!("[VoiceWake] Channel created (unbounded), spawning capture thread...");
+    
+    let is_running_atomic = Arc::new(AtomicBool::new(true));
+    let is_running_capture = Arc::clone(&is_running_atomic);
+    
+    // 在后台线程运行音频捕获
+    let capture_handle = std::thread::spawn(move || {
+        println!("[AudioCapture-Thread] Starting audio capture in std::thread...");
+        
+        let mut audio_capture = match crate::voice::AudioCapture::new() {
+            Ok(capture) => capture,
+            Err(e) => {
+                eprintln!("[AudioCapture-Thread] Failed to create: {}", e);
+                return;
+            }
+        };
+        
+        if let Err(e) = audio_capture.start(16000, 1, audio_tx) {
+            eprintln!("[AudioCapture-Thread] Failed to start: {}", e);
+            return;
+        }
+        
+        println!("[AudioCapture-Thread] Stream started, waiting...");
+        while is_running_capture.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        println!("[AudioCapture-Thread] Exiting");
+    });
+    
+    // 保持 handle 引用，防止线程被提前终止
+    println!("[VoiceWake] Capture thread spawned");
+    
+    // 使用 mem::forget 防止 handle 被 drop，否则线程会被提前终止
+    std::mem::forget(capture_handle);
+    
+    println!("[VoiceWake] Capture thread spawned, waiting for stream...");
+    
+    // 等待音频流启动 - 使用标准库 sleep 避免 tokio runtime 问题
+    std::thread::sleep(Duration::from_millis(200));
+    println!("[VoiceWake] Audio capture started, entering main loop");
+    
     let mut state = WakeLoopState::Idle;
     let mut last_audio_time = Instant::now();
-    let energy_threshold = 0.02f32;
-    let silence_timeout = Duration::from_millis(silence_timeout_ms as u64);
+    let mut last_wake_time = Instant::now();
+    const WAKE_COOLDOWN_MS: u64 = 2000; // 唤醒后 2 秒内不再触发
     
     let tts_player = TtsPlayer::new(wake_sounds.clone());
     
-    let resource_dir = std::env::current_exe()
+    // 尝试多个可能的资源目录位置
+    let resource_dir = std::env::current_dir()
         .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .map(|p| p.join("resources").join("tts"));
+        .and_then(|p| {
+            println!("[VoiceWake] Current dir: {:?}", p);
+            // 尝试 1: 直接在 current_dir/resources/tts（开发模式，当 cwd 是 src-tauri 时）
+            let tts_dir = p.join("resources").join("tts");
+            println!("[VoiceWake] Checking TTS dir: {:?}", tts_dir);
+            if tts_dir.exists() {
+                println!("[VoiceWake] TTS resource dir found (dev mode): {:?}", tts_dir);
+                return Some(tts_dir);
+            }
+            // 尝试 2: 从项目根目录查找（开发模式，当 cwd 是项目根目录时）
+            let project_tts = p.join("src-tauri").join("resources").join("tts");
+            println!("[VoiceWake] Checking project TTS dir: {:?}", project_tts);
+            if project_tts.exists() {
+                println!("[VoiceWake] TTS resource dir found (dev mode from root): {:?}", project_tts);
+                return Some(project_tts);
+            }
+            None
+        })
+        .or_else(|| {
+            // 尝试从 exe 位置查找（生产模式）
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| {
+                    println!("[VoiceWake] Current exe: {:?}", p);
+                    p.parent().map(|p| p.to_path_buf())
+                })
+                .and_then(|p| {
+                    println!("[VoiceWake] Exe parent dir: {:?}", p);
+                    // 尝试直接查找 resources/tts 目录
+                    let tts_dir = p.join("resources").join("tts");
+                    println!("[VoiceWake] Checking TTS dir: {:?}", tts_dir);
+                    if tts_dir.exists() {
+                        println!("[VoiceWake] TTS resource dir found (prod mode): {:?}", tts_dir);
+                        Some(tts_dir)
+                    } else {
+                        println!("[VoiceWake] TTS resource dir not found, using beep sound");
+                        None
+                    }
+                })
+        });
     
     let tts_player = if let Some(ref dir) = resource_dir {
+        println!("[VoiceWake] TTS resource dir: {:?}", dir);
         tts_player.with_resource_dir(dir.clone())
     } else {
+        println!("[VoiceWake] TTS resource dir not found, using beep sound");
         tts_player
     };
-    
-    let (audio_tx, mut audio_rx) = mpsc::channel::<Vec<f32>>(100);
-    
-    let audio_capture_result: Result<(), String> = (|| {
-        let mut audio_capture = crate::voice::AudioCapture::new()?;
-        audio_capture.start(16000, 1, audio_tx.clone())?;
-        Ok(())
-    })();
-    
-    if let Err(e) = audio_capture_result {
-        eprintln!("[VoiceWake] Failed to start audio capture: {}", e);
-        let _ = app.emit_all("voice-error", serde_json::json!({"message": format!("音频捕获启动失败：{}", e)}));
-        return;
-    }
-    
-    println!("[VoiceWake] Audio capture started");
     
     let mut audio_buffer: VecDeque<Vec<f32>> = VecDeque::with_capacity(10);
     const BUFFER_SIZE: usize = 10;
     
-    let mut ws_write = None;
-    let mut ws_read = None;
+    let energy_threshold = 0.0001f32;
+    let silence_timeout = Duration::from_millis(silence_timeout_ms as u64);
     
-    while *is_running.lock().await {
+    let mut frame_count = 0u32;
+    let mut last_log_time = Instant::now();
+    
+    type WsStream = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+    type WsSplitSink = futures_util::stream::SplitSink<WsStream, Message>;
+    type WsSplitStream = futures_util::stream::SplitStream<WsStream>;
+
+    let mut ws_write: Option<WsSplitSink> = None;
+    let mut ws_read: Option<WsSplitStream> = None;
+    
+    let mut idle_iterations = 0u32;
+    let mut last_recv_time = Instant::now();
+    
+    println!("[VoiceWake] About to enter main loop, checking is_running...");
+    
+    // 使用 AtomicBool 检查运行状态，避免 tokio Mutex 死锁
+    loop {
+        if !is_running_atomic.load(Ordering::SeqCst) {
+            println!("[VoiceWake] is_running_atomic is false, exiting loop");
+            break;
+        }
+        
+        idle_iterations += 1;
+        if idle_iterations % 20 == 1 {
+            println!("[VoiceWake] Loop iteration {}, state={:?}, last_recv={:?} ago", 
+                idle_iterations, state, last_recv_time.elapsed());
+        }
+        
         match state {
             WakeLoopState::Idle => {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-                
-                while let Ok(audio_data) = audio_rx.try_recv() {
-                    last_audio_time = Instant::now();
-                    
-                    let energy: f32 = audio_data.iter().map(|&s| s * s).sum::<f32>() / audio_data.len() as f32;
-                    
-                    if energy > energy_threshold {
-                        audio_buffer.push_back(audio_data.clone());
-                        if audio_buffer.len() > BUFFER_SIZE {
-                            audio_buffer.pop_front();
+                // 使用 try_recv 轮询接收数据
+                match audio_rx.try_recv() {
+                    Ok(audio_data) => {
+                        frame_count += 1;
+                        last_audio_time = Instant::now();
+                        last_recv_time = Instant::now();
+
+                        // 计算能量和样本统计
+                        let energy: f32 = audio_data.iter().map(|&s| s * s).sum::<f32>() / audio_data.len() as f32;
+                        let max_sample = audio_data.iter().cloned().fold(0.0f32, |a, b| a.max(b.abs()));
+                        let avg_sample = audio_data.iter().map(|s| s.abs()).sum::<f32>() / audio_data.len() as f32;
+
+                        if frame_count % 50 == 1 {
+                            println!("[VoiceWake] Received frame {}, len={}, energy={:.6}, max={:.6}, avg={:.6}",
+                                frame_count, audio_data.len(), energy, max_sample, avg_sample);
                         }
-                        
-                        println!("[VoiceWake] Voice activity detected (energy={:.4})", energy);
-                        
-                        state = WakeLoopState::Waking;
-                        break;
+
+                        if energy > energy_threshold {
+                            // 检查冷却时间
+                            if last_wake_time.elapsed() < Duration::from_millis(WAKE_COOLDOWN_MS) {
+                                if frame_count % 100 == 1 {
+                                    println!("[VoiceWake] In cooldown, skipping (elapsed={:?})", last_wake_time.elapsed());
+                                }
+                            } else {
+                                println!("[VoiceWake] Voice activity detected (energy={:.4}, max={:.4}), entering Verifying state", energy, max_sample);
+                                last_wake_time = Instant::now();
+                                state = WakeLoopState::Verifying;
+                                audio_buffer.clear();
+                                audio_buffer.push_back(audio_data);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // 没有数据，短暂等待后重试
+                        std::thread::sleep(Duration::from_millis(1));
                     }
                 }
-                
-                if last_audio_time.elapsed() > Duration::from_secs(60) {
-                    println!("[VoiceWake] Long silence detected, reinitializing");
-                    last_audio_time = Instant::now();
+            }
+
+            WakeLoopState::Verifying => {
+                println!("[VoiceWake] VERIFYING state - checking for wake word");
+
+                // 收集更多音频数据
+                let verify_duration = Duration::from_millis(1500); // 收集 1.5 秒音频
+                let verify_start = Instant::now();
+
+                while verify_start.elapsed() < verify_duration {
+                    match audio_rx.try_recv() {
+                        Ok(audio_data) => {
+                            audio_buffer.push_back(audio_data);
+                            last_audio_time = Instant::now();
+                        }
+                        Err(_) => {
+                            std::thread::sleep(Duration::from_millis(10));
+                        }
+                    }
+                }
+
+                // 将缓冲的音频数据发送到 ASR 进行识别
+                let asr_url = if vosk_api_key.is_empty() {
+                    vosk_url.clone()
+                } else {
+                    format!("{}?api_key={}", vosk_url, vosk_api_key)
+                };
+
+                println!("[VoiceWake] Sending audio to ASR for wake word verification, URL: {}", asr_url);
+
+                // 收集所有缓冲的音频数据
+                let mut all_audio: Vec<f32> = Vec::new();
+                while let Some(chunk) = audio_buffer.pop_front() {
+                    all_audio.extend(chunk);
+                }
+
+                // 在后台线程执行 ASR 识别
+                let wake_word_clone = wake_word.clone();
+                let verify_result = std::thread::spawn(move || {
+                    println!("[Verify-Thread] Creating tokio runtime...");
+
+                    let rt = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => {
+                            println!("[Verify-Thread] Runtime created successfully");
+                            rt
+                        },
+                        Err(e) => {
+                            eprintln!("[Verify-Thread] Runtime build failed: {}", e);
+                            return Err(format!("Runtime build failed: {}", e));
+                        }
+                    };
+
+                    rt.block_on(async {
+                        // 连接 ASR
+                        let (ws_stream, _response) = match tokio::time::timeout(
+                            Duration::from_secs(3),
+                            connect_async(&asr_url)
+                        ).await {
+                            Ok(Ok(result)) => {
+                                println!("[Verify-Thread] Connected to ASR");
+                                result
+                            },
+                            Ok(Err(e)) => {
+                                eprintln!("[Verify-Thread] Connection failed: {}", e);
+                                return Err(format!("Connection failed: {}", e));
+                            },
+                            Err(_) => {
+                                eprintln!("[Verify-Thread] Connection timeout");
+                                return Err("Connection timeout".to_string());
+                            }
+                        };
+
+                        let (mut write, mut read) = ws_stream.split();
+
+                        // 发送配置
+                        let config = serde_json::json!({
+                            "config": { "sample_rate": 16000 }
+                        });
+
+                        println!("[Verify-Thread] Sending config...");
+                        if let Err(e) = write.send(Message::Text(config.to_string())).await {
+                            return Err(format!("Failed to send config: {}", e));
+                        }
+
+                        // 等待响应
+                        match tokio::time::timeout(Duration::from_secs(2), read.next()).await {
+                            Ok(Some(Ok(Message::Text(text)))) => {
+                                println!("[Verify-Thread] Config response: {}", text);
+                            },
+                            Ok(Some(Ok(msg))) => {
+                                println!("[Verify-Thread] Config response: {:?}", msg);
+                            },
+                            _ => {
+                                println!("[Verify-Thread] No config response");
+                            }
+                        }
+
+                        // 发送音频数据
+                        println!("[Verify-Thread] Sending {} audio samples", all_audio.len());
+                        let bytes: Vec<u8> = all_audio
+                            .iter()
+                            .flat_map(|&s| ((s * 32767.0) as i16).to_le_bytes())
+                            .collect();
+
+                        if let Err(e) = write.send(Message::Binary(bytes)).await {
+                            return Err(format!("Failed to send audio: {}", e));
+                        }
+
+                        // 发送结束标志
+                        let eof = serde_json::json!({
+                            "eof": true
+                        });
+                        if let Err(e) = write.send(Message::Text(eof.to_string())).await {
+                            eprintln!("[Verify-Thread] Failed to send EOF: {}", e);
+                        }
+
+                        // 接收识别结果
+                        println!("[Verify-Thread] Waiting for recognition result...");
+                        let mut recognized_text = String::new();
+
+                        while let Ok(Some(msg)) = tokio::time::timeout(
+                            Duration::from_secs(5),
+                            read.next()
+                        ).await {
+                            match msg {
+                                Ok(Message::Text(text)) => {
+                                    println!("[Verify-Thread] ASR result: {}", text);
+                                    if let Ok(result) = serde_json::from_str::<serde_json::Value>(&text) {
+                                        // 检查 final result
+                                        if let Some(result_arr) = result.get("result").and_then(|r| r.as_array()) {
+                                            if !result_arr.is_empty() {
+                                                recognized_text = result_arr.iter()
+                                                    .filter_map(|r| r.get("word").and_then(|w| w.as_str()))
+                                                    .collect::<Vec<_>>()
+                                                    .join(" ");
+                                                println!("[Verify-Thread] Final text: {}", recognized_text);
+                                                break;
+                                            }
+                                        }
+                                        // 检查 partial
+                                        if let Some(partial) = result.get("partial").and_then(|p| p.as_str()) {
+                                            if !partial.is_empty() {
+                                                recognized_text = partial.to_string();
+                                                println!("[Verify-Thread] Partial text: {}", recognized_text);
+                                            }
+                                        }
+                                    }
+                                }
+                                Ok(Message::Close(_)) => break,
+                                Err(e) => {
+                                    eprintln!("[Verify-Thread] WebSocket error: {}", e);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        println!("[Verify-Thread] Recognition complete: '{}'", recognized_text);
+                        Ok(recognized_text)
+                    })
+                })
+                .join()
+                .unwrap_or(Err("Thread join failed".to_string()));
+
+                // 检查识别结果是否包含唤醒词
+                let wake_word_detected = match verify_result {
+                    Ok(text) => {
+                        println!("[VoiceWake] ASR recognized: '{}'", text);
+                        fuzzy_match_keyword(&text, &wake_word)
+                    }
+                    Err(e) => {
+                        eprintln!("[VoiceWake] Verification error: {}", e);
+                        false
+                    }
+                };
+
+                if wake_word_detected {
+                    println!("[VoiceWake] WAKE WORD DETECTED! Entering Waking state");
+                    state = WakeLoopState::Waking;
+                } else {
+                    println!("[VoiceWake] Not a wake word, returning to Idle");
+                    state = WakeLoopState::Idle;
                 }
             }
             
@@ -321,10 +625,14 @@ async fn run_wake_loop(
                 let _ = app.emit_all("voice-waked", ());
                 let _ = app.emit_all("voice-state-changed", serde_json::json!({"state": "waking"}));
                 
+                // 同步播放 TTS，等待完成
                 match tts_player.play_wake_response() {
                     Ok(_) => println!("[VoiceWake] TTS response played"),
                     Err(e) => eprintln!("[VoiceWake] TTS playback error: {}", e),
                 }
+                
+                // 短暂延迟后进入监听状态
+                std::thread::sleep(Duration::from_millis(500));
                 
                 state = WakeLoopState::Listening;
                 audio_buffer.clear();
@@ -332,38 +640,111 @@ async fn run_wake_loop(
             
             WakeLoopState::Listening => {
                 println!("[VoiceWake] LISTENING state - connecting to ASR");
-                
+
                 let _ = app.emit_all("voice-state-changed", serde_json::json!({"state": "listening"}));
-                
+
                 let asr_url = if vosk_api_key.is_empty() {
                     vosk_url.clone()
                 } else {
                     format!("{}?api_key={}", vosk_url, vosk_api_key)
                 };
-                
-                match connect_async(&asr_url).await {
-                    Ok((ws_stream, _)) => {
-                        let (write, read) = ws_stream.split();
-                        let mut write_pinned = Box::pin(write);
-                        
+
+                println!("[VoiceWake] ASR URL: {}", asr_url);
+
+                // 使用 std::thread 阻塞执行 WebSocket 连接和配置发送
+                let connect_result = std::thread::spawn(move || {
+                    println!("[ASR-Thread] Creating tokio runtime...");
+
+                    // 创建新的 runtime
+                    let rt = match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => {
+                            println!("[ASR-Thread] Runtime created successfully");
+                            rt
+                        },
+                        Err(e) => {
+                            eprintln!("[ASR-Thread] Runtime build failed: {}", e);
+                            return Err(format!("Runtime build failed: {}", e));
+                        }
+                    };
+
+                    println!("[ASR-Thread] Connecting to ASR: {}", asr_url);
+
+                    // 执行连接和配置发送
+                    let result = rt.block_on(async {
+                        // 连接 - connect_async 返回 (WebSocketStream, Response)
+                        let (ws_stream, _response) = match tokio::time::timeout(Duration::from_secs(3), connect_async(&asr_url)).await {
+                            Ok(Ok(result)) => {
+                                println!("[ASR-Thread] Connected successfully");
+                                result
+                            },
+                            Ok(Err(e)) => {
+                                eprintln!("[ASR-Thread] Connection failed: {}", e);
+                                return Err(format!("Connection failed: {}", e));
+                            },
+                            Err(_) => {
+                                eprintln!("[ASR-Thread] Connection timeout (3s)");
+                                return Err("Connection timeout (3s)".to_string());
+                            }
+                        };
+
+                        // 使用 futures_util::StreamExt::split 来分割流
+                        use futures_util::StreamExt;
+                        let (mut write, mut read) = ws_stream.split();
+
+                        // 发送配置
                         let config = serde_json::json!({
                             "config": { "sample_rate": 16000 }
                         });
-                        if let Err(e) = write_pinned.send(Message::Text(config.to_string())).await {
-                            eprintln!("[VoiceWake] Failed to send ASR config: {}", e);
-                            state = WakeLoopState::Idle;
-                            continue;
+
+                        println!("[ASR-Config] Sending config...");
+                        if let Err(e) = write.send(Message::Text(config.to_string())).await {
+                            return Err(format!("Failed to send config: {}", e));
                         }
-                        
-                        ws_write = Some(write_pinned);
-                        ws_read = Some(Box::pin(read));
-                        
-                        println!("[VoiceWake] Connected to ASR service");
+
+                        // 等待响应
+                        println!("[ASR-Config] Waiting for response...");
+                        match tokio::time::timeout(Duration::from_secs(2), read.next()).await {
+                            Ok(Some(Ok(Message::Text(text)))) => {
+                                println!("[ASR-Config] Response: {}", text);
+                            },
+                            Ok(Some(Ok(msg))) => {
+                                println!("[ASR-Config] Response: {:?}", msg);
+                            },
+                            Ok(Some(Err(e))) => {
+                                return Err(format!("Read error: {}", e));
+                            },
+                            Ok(None) => {
+                                return Err("Connection closed".to_string());
+                            },
+                            Err(_) => {
+                                return Err("Timeout waiting for response".to_string());
+                            },
+                        }
+
+                        println!("[ASR-Thread] Config sent successfully, returning stream");
+                        Ok((write, read))
+                    });
+
+                    println!("[ASR-Thread] block_on completed");
+                    result
+                })
+                .join()
+                .unwrap_or(Err("Thread join failed".to_string()));
+
+                println!("[VoiceWake] ASR connect_result: {}", if connect_result.is_ok() { "OK" } else { "ERR" });
+
+                match connect_result {
+                    Ok((write, read)) => {
+                        println!("[VoiceWake] Config sent successfully, entering Processing state");
+                        ws_write = Some(write);
+                        ws_read = Some(read);
                         state = WakeLoopState::Processing;
                     }
                     Err(e) => {
-                        eprintln!("[VoiceWake] Failed to connect to ASR: {}", e);
-                        let _ = app.emit_all("voice-error", serde_json::json!({"message": format!("ASR 连接失败：{}", e)}));
+                        eprintln!("[VoiceWake] ASR config error: {}", e);
                         state = WakeLoopState::Idle;
                     }
                 }
@@ -465,6 +846,7 @@ async fn run_wake_loop(
         }
     }
     
+    is_running_atomic.store(false, Ordering::SeqCst);
     println!("[VoiceWake] Wake loop stopped");
 }
 

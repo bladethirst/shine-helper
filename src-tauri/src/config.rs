@@ -58,7 +58,7 @@ impl Default for VoiceWakeConfig {
         Self {
             enabled: false,
             wake_word: "小 Shine".to_string(),
-            wake_sounds: vec!["在呢".to_string(), "你说".to_string(), "请讲".to_string()],
+            wake_sounds: vec!["在呢".to_string(), "在的".to_string(), "我在".to_string(), "请说".to_string()],
             silence_timeout: 3000,
             end_words: vec!["结束".to_string(), "停止".to_string()],
             vosk_url: default_vosk_url(),
