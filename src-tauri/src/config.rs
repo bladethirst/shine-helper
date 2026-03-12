@@ -47,10 +47,20 @@ pub struct VoiceWakeConfig {
     /// Vosk ASR API Key
     #[serde(default)]
     pub vosk_api_key: String,
+    /// 唤醒后是否自动发送（默认 false=半自动）
+    #[serde(default)]
+    pub auto_send_after_wake: bool,
+    /// 唤醒后是否自动开启麦克风（默认 true）
+    #[serde(default = "default_true")]
+    pub auto_mic_after_wake: bool,
 }
 
 fn default_vosk_url() -> String {
     "ws://192.168.150.26:2700".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for VoiceWakeConfig {
@@ -63,6 +73,8 @@ impl Default for VoiceWakeConfig {
             end_words: vec!["结束".to_string(), "停止".to_string()],
             vosk_url: default_vosk_url(),
             vosk_api_key: "".to_string(),
+            auto_send_after_wake: false,
+            auto_mic_after_wake: true,
         }
     }
 }

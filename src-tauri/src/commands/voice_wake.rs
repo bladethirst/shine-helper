@@ -197,8 +197,7 @@ pub enum WakeLoopState {
     Idle,           // 待机，仅检测能量
     Verifying,      // 验证中，连接 ASR 检测是否为唤醒词
     Waking,         // 唤醒中，播放 TTS 响应
-    Listening,      // 监听中，连接 ASR 识别用户指令
-    Processing,     // 处理中，接收 ASR 结果
+    Listening,      // 监听中，连接 ASR 识别用户指令（包含 Processing 流程）
 }
 
 #[tauri::command]
@@ -420,10 +419,13 @@ async fn run_wake_loop(
 
     let mut ws_write: Option<WsSplitSink> = None;
     let mut ws_read: Option<WsSplitStream> = None;
-    
+
     let mut idle_iterations = 0u32;
     let mut last_recv_time = Instant::now();
-    
+
+    // 标记是否处于唤醒后聆听模式（Waking -> Listening -> Processing 流程）
+    let mut is_wake_listening_mode = false;
+
     println!("[VoiceWake] About to enter main loop, checking is_running...");
     
     // 使用 AtomicBool 检查运行状态，避免 tokio Mutex 死锁
@@ -678,25 +680,28 @@ async fn run_wake_loop(
                     state = WakeLoopState::Waking;
                 } else {
                     println!("[VoiceWake] Not a wake word, returning to Idle");
+                    is_wake_listening_mode = false;
                     state = WakeLoopState::Idle;
                 }
             }
             
             WakeLoopState::Waking => {
                 println!("[VoiceWake] WAKING state - sending events and playing TTS");
-                
+
                 let _ = app.emit_all("voice-waked", ());
                 let _ = app.emit_all("voice-state-changed", serde_json::json!({"state": "waking"}));
-                
+
                 // 同步播放 TTS，等待完成
                 match tts_player.play_wake_response() {
                     Ok(_) => println!("[VoiceWake] TTS response played"),
                     Err(e) => eprintln!("[VoiceWake] TTS playback error: {}", e),
                 }
-                
+
                 // 短暂延迟后进入监听状态
                 std::thread::sleep(Duration::from_millis(500));
-                
+
+                // 标记进入唤醒后聆听模式
+                is_wake_listening_mode = true;
                 state = WakeLoopState::Listening;
                 audio_buffer.clear();
             }
@@ -714,138 +719,110 @@ async fn run_wake_loop(
 
                 println!("[VoiceWake] ASR URL: {}", asr_url);
 
-                // 使用 std::thread 阻塞执行 WebSocket 连接和配置发送
-                let connect_result = std::thread::spawn(move || {
-                    println!("[ASR-Thread] Creating tokio runtime...");
+                // 在同一个 std::thread 中完成连接和 Processing 整个流程
+                // 使用 Option 包裹 audio_rx，通过 take() 转移所有权
+                let mut audio_rx_opt = Some(std::mem::replace(&mut audio_rx, mpsc::unbounded_channel().1));
+                let processing_result = std::thread::spawn({
+                    let app = app.clone();
+                    let end_words = end_words.clone();
+                    let silence_timeout = silence_timeout;
+                    move || {
+                        println!("[ASR-Thread] Creating tokio runtime for Listening+Processing loop...");
 
-                    // 创建新的 runtime
-                    let rt = match tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        Ok(rt) => {
-                            println!("[ASR-Thread] Runtime created successfully");
-                            rt
-                        },
-                        Err(e) => {
-                            eprintln!("[ASR-Thread] Runtime build failed: {}", e);
-                            return Err(format!("Runtime build failed: {}", e));
-                        }
-                    };
-
-                    println!("[ASR-Thread] Connecting to ASR: {}", asr_url);
-
-                    // 执行连接和配置发送
-                    let result = rt.block_on(async {
-                        // 连接 - connect_async 返回 (WebSocketStream, Response)
-                        let (ws_stream, _response) = match tokio::time::timeout(Duration::from_secs(3), connect_async(&asr_url)).await {
-                            Ok(Ok(result)) => {
-                                println!("[ASR-Thread] Connected successfully");
-                                result
+                        let rt = match tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        {
+                            Ok(rt) => {
+                                println!("[ASR-Thread] Runtime created successfully");
+                                rt
                             },
-                            Ok(Err(e)) => {
-                                eprintln!("[ASR-Thread] Connection failed: {}", e);
-                                return Err(format!("Connection failed: {}", e));
-                            },
-                            Err(_) => {
-                                eprintln!("[ASR-Thread] Connection timeout (3s)");
-                                return Err("Connection timeout (3s)".to_string());
+                            Err(e) => {
+                                eprintln!("[ASR-Thread] Runtime build failed: {}", e);
+                                return Err(format!("Runtime build failed: {}", e));
                             }
                         };
 
-                        // 使用 futures_util::StreamExt::split 来分割流
-                        use futures_util::StreamExt;
-                        let (mut write, mut read) = ws_stream.split();
+                        let mut audio_rx = audio_rx_opt.take().unwrap();
 
-                        // 发送配置
-                        let config = serde_json::json!({
-                            "config": { "sample_rate": 16000 }
-                        });
+                        // 在同一个 runtime 中执行连接和 Processing 循环
+                        rt.block_on(async move {
+                            println!("[ASR-Thread] Connecting to ASR: {}", asr_url);
 
-                        println!("[ASR-Config] Sending config...");
-                        if let Err(e) = write.send(Message::Text(config.to_string())).await {
-                            return Err(format!("Failed to send config: {}", e));
-                        }
+                            // 连接
+                            let (ws_stream, _response) = match tokio::time::timeout(Duration::from_secs(3), connect_async(&asr_url)).await {
+                                Ok(Ok(result)) => {
+                                    println!("[ASR-Thread] Connected successfully");
+                                    result
+                                },
+                                Ok(Err(e)) => {
+                                    eprintln!("[ASR-Thread] Connection failed: {}", e);
+                                    return Err(format!("Connection failed: {}", e));
+                                },
+                                Err(_) => {
+                                    eprintln!("[ASR-Thread] Connection timeout (3s)");
+                                    return Err("Connection timeout (3s)".to_string());
+                                }
+                            };
 
-                        // 等待响应
-                        println!("[ASR-Config] Waiting for response...");
-                        match tokio::time::timeout(Duration::from_secs(2), read.next()).await {
-                            Ok(Some(Ok(Message::Text(text)))) => {
-                                println!("[ASR-Config] Response: {}", text);
-                            },
-                            Ok(Some(Ok(msg))) => {
-                                println!("[ASR-Config] Response: {:?}", msg);
-                            },
-                            Ok(Some(Err(e))) => {
-                                return Err(format!("Read error: {}", e));
-                            },
-                            Ok(None) => {
-                                return Err("Connection closed".to_string());
-                            },
-                            Err(_) => {
-                                return Err("Timeout waiting for response".to_string());
-                            },
-                        }
+                            use futures_util::StreamExt;
+                            let (mut write, mut read) = ws_stream.split();
 
-                        println!("[ASR-Thread] Config sent successfully, returning stream");
-                        Ok((write, read))
-                    });
+                            // 发送配置
+                            let config = serde_json::json!({
+                                "config": { "sample_rate": 16000 }
+                            });
+                            println!("[ASR-Config] Sending config...");
+                            if let Err(e) = write.send(Message::Text(config.to_string())).await {
+                                return Err(format!("Failed to send config: {}", e));
+                            }
+                            println!("[ASR-Config] Config sent, entering Processing loop");
 
-                    println!("[ASR-Thread] block_on completed");
-                    result
-                })
-                .join()
-                .unwrap_or(Err("Thread join failed".to_string()));
+                            // 进入 Processing 循环，返回最终结果
+                            let mut last_audio_time = Instant::now();
+                            let mut end_reason: Option<String> = None;
 
-                println!("[VoiceWake] ASR connect_result: {}", if connect_result.is_ok() { "OK" } else { "ERR" });
-
-                match connect_result {
-                    Ok((write, read)) => {
-                        println!("[VoiceWake] Config sent successfully, entering Processing state");
-                        ws_write = Some(write);
-                        ws_read = Some(read);
-                        state = WakeLoopState::Processing;
-                    }
-                    Err(e) => {
-                        eprintln!("[VoiceWake] ASR config error: {}", e);
-                        state = WakeLoopState::Idle;
-                    }
-                }
-            }
-            
-            WakeLoopState::Processing => {
-                println!("[VoiceWake] PROCESSING state - receiving ASR results");
-                
-                let ws_write_ref = &mut ws_write;
-                let ws_read_ref = &mut ws_read;
-                
-                tokio::select! {
-                    _ = async {
-                        while let Ok(audio_data) = audio_rx.try_recv() {
-                            last_audio_time = Instant::now();
-                            
-                            if let Some(ref mut write) = ws_write_ref {
-                                let bytes: Vec<u8> = audio_data
-                                    .iter()
-                                    .flat_map(|&s| ((s * 32767.0) as i16).to_le_bytes())
-                                    .collect();
-                                if let Err(e) = write.send(Message::Binary(bytes)).await {
-                                    eprintln!("[VoiceWake] Failed to send audio to ASR: {}", e);
+                            // 使用 tokio::select 等待音频数据或 ASR 结果
+                            // 使用 futures::stream::unfold 或者简单的循环 + timeout
+                            use tokio::sync::mpsc::error::TryRecvError;
+                            loop {
+                                // 尝试接收音频数据并发送
+                                loop {
+                                    match audio_rx.try_recv() {
+                                        Ok(audio_data) => {
+                                            last_audio_time = Instant::now();
+                                            let bytes: Vec<u8> = audio_data
+                                                .iter()
+                                                .flat_map(|&s| ((s * 32767.0) as i16).to_le_bytes())
+                                                .collect();
+                                            if let Err(e) = write.send(Message::Binary(bytes)).await {
+                                                eprintln!("[ASR-Thread] Failed to send audio: {}", e);
+                                                end_reason = Some("send_error".to_string());
+                                                break;
+                                            }
+                                        }
+                                        Err(TryRecvError::Empty) => {
+                                            // 没有数据，继续接收 ASR 结果
+                                            break;
+                                        }
+                                        Err(TryRecvError::Disconnected) => {
+                                            // Channel closed
+                                            end_reason = Some("channel_closed".to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                                if end_reason.is_some() {
                                     break;
                                 }
-                            }
-                        }
-                    } => {}
-                    
-                    result = async {
-                        if let Some(ref mut read) = ws_read_ref {
-                            while let Some(msg) = read.next().await {
-                                match msg {
-                                    Ok(Message::Text(text)) => {
+
+                                // 接收 ASR 结果（带超时）
+                                match tokio::time::timeout(Duration::from_millis(100), read.next()).await {
+                                    Ok(Some(Ok(Message::Text(text)))) => {
                                         if let Ok(result) = serde_json::from_str::<serde_json::Value>(&text) {
                                             if let Some(partial) = result.get("partial").and_then(|p| p.as_str()) {
                                                 if !partial.is_empty() {
-                                                    println!("[VoiceWake] Partial result: {}", partial);
+                                                    println!("[ASR-Thread] Partial: {}", partial);
                                                     let _ = app.emit_all("voice-result", serde_json::json!({
                                                         "text": partial,
                                                         "is_final": false
@@ -853,62 +830,80 @@ async fn run_wake_loop(
                                                 }
                                             } else if let Some(result_text) = result.get("text").and_then(|t| t.as_str()) {
                                                 if !result_text.is_empty() {
-                                                    println!("[VoiceWake] Final result: {}", result_text);
+                                                    println!("[ASR-Thread] Final: {}", result_text);
                                                     let _ = app.emit_all("voice-result", serde_json::json!({
                                                         "text": result_text,
                                                         "is_final": true
                                                     }));
-                                                    
+
+                                                    // 检查结束词
                                                     for end_word in &end_words {
                                                         if result_text.contains(end_word) {
-                                                            println!("[VoiceWake] End word '{}' detected", end_word);
-                                                            return Some("end_word");
+                                                            println!("[ASR-Thread] End word '{}' detected", end_word);
+                                                            end_reason = Some("end_word".to_string());
+                                                            break;
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                    Ok(Message::Close(_)) => {
-                                        println!("[VoiceWake] ASR connection closed");
-                                        return Some("closed");
+                                    Ok(Some(Ok(Message::Close(_)))) => {
+                                        println!("[ASR-Thread] Connection closed");
+                                        end_reason = Some("closed".to_string());
                                     }
-                                    Err(e) => {
-                                        eprintln!("[VoiceWake] ASR error: {}", e);
-                                        return Some("error");
+                                    Ok(Some(Err(e))) => {
+                                        eprintln!("[ASR-Thread] WebSocket error: {}", e);
+                                        end_reason = Some("error".to_string());
                                     }
-                                    _ => {}
+                                    Ok(Some(Ok(_))) => {
+                                        // 其他消息类型（Binary, Ping, Pong, Frame），忽略
+                                    }
+                                    Ok(None) | Err(_) => {
+                                        // Timeout 或 stream ended
+                                    }
+                                }
+
+                                if end_reason.is_some() {
+                                    break;
+                                }
+
+                                // 检查静音超时
+                                if last_audio_time.elapsed() >= silence_timeout {
+                                    println!("[ASR-Thread] Silence timeout");
+                                    end_reason = Some("silence_timeout".to_string());
+                                    break;
                                 }
                             }
-                        }
-                        None
-                    } => {
-                        if let Some(reason) = result {
-                            println!("[VoiceWake] Processing ended: {}", reason);
-                            state = WakeLoopState::Idle;
-                            ws_write = None;
-                            ws_read = None;
-                            continue;
-                        }
+
+                            Ok(end_reason)
+                        })
                     }
-                    
-                    _ = tokio::time::sleep(silence_timeout) => {
-                        if last_audio_time.elapsed() >= silence_timeout {
-                            println!("[VoiceWake] Silence timeout ({:?})", silence_timeout);
-                            let _ = app.emit_all("voice-result", serde_json::json!({
-                                "text": "",
-                                "is_final": true
-                            }));
-                            state = WakeLoopState::Idle;
-                            ws_write = None;
-                            ws_read = None;
-                        }
-                    }
+                })
+                .join()
+                .unwrap_or(Err("Thread join failed".to_string()));
+
+                println!("[VoiceWake] Processing result: {:?}", processing_result);
+
+                // 发送 Processing 完成事件
+                let _ = app.emit_all("voice-result", serde_json::json!({
+                    "text": "",
+                    "is_final": true
+                }));
+
+                // 如果是唤醒后聆听模式，发送完成事件
+                if is_wake_listening_mode {
+                    println!("[VoiceWake] Emitting voice-input-complete");
+                    let _ = app.emit_all("voice-input-complete", ());
+                    is_wake_listening_mode = false;
                 }
+
+                // 返回 Idle 状态
+                state = WakeLoopState::Idle;
             }
         }
     }
-    
+
     is_running_atomic.store(false, Ordering::SeqCst);
     println!("[VoiceWake] Wake loop stopped");
 }

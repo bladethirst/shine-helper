@@ -1,113 +1,99 @@
+[AutoVoiceWake] Auto-starting voice wake service...
 [VoiceWake] Spawning wake loop task...
 [VoiceWake] Spawn complete
 [AutoVoiceWake] Successfully auto-started voice wake service
 [VoiceWake] Task started, calling run_wake_loop...
-[VoiceWake] Starting wake loop with wake_word='小欣', vosk_url=ws://192.168.150.26:2700
+[VoiceWake] Starting wake loop with wake_word='小智', vosk_url=ws://192.168.150.26:2700
 [VoiceWake] Channel created (unbounded), spawning capture thread...
 [VoiceWake] Capture thread spawned
 [VoiceWake] Capture thread spawned, waiting for stream...
 [AudioCapture-Thread] Starting audio capture in std::thread...
 [AudioCapture] Using device: default
 [AudioCapture] Sample rate: 44100, Channels: 2
+[AudioCapture] Stream started
+[AudioCapture-Thread] Stream started, waiting...
 [VoiceWake] Audio capture started, entering main loop
 [VoiceWake] Current dir: "/data/workspace/shine-helper/src-tauri"
 [VoiceWake] Checking TTS dir: "/data/workspace/shine-helper/src-tauri/resources/tts"
 [VoiceWake] TTS resource dir found (dev mode): "/data/workspace/shine-helper/src-tauri/resources/tts"
 [VoiceWake] TTS resource dir: "/data/workspace/shine-helper/src-tauri/resources/tts"
 [VoiceWake] About to enter main loop, checking is_running...
-[VoiceWake] Loop iteration 1, state=Idle, last_recv=3.54µs ago
-[AudioCapture] Stream started
-[AudioCapture-Thread] Stream started, waiting...
-[VoiceWake] Voice activity detected (energy=0.0002, max=0.1173), entering Verifying state
+[AudioCapture] Captured 100 frames, data.len=2646
+[AudioCapture] Captured 200 frames, data.len=2646
+[VoiceWake] Voice activity detected (energy=0.0002, max=0.0594), entering Verifying state
 [VoiceWake] VERIFYING state - checking for wake word
-[AudioCapture] Captured 100 frames, data.len=2734
 [VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
+[VoiceWake] Converted to mono: 66635 samples
 [Verify-Thread] Creating tokio runtime...
 [Verify-Thread] Runtime created successfully
 [Verify-Thread] Connected to ASR
 [Verify-Thread] Sending config...
+[AudioCapture] Captured 300 frames, data.len=2646
 [Verify-Thread] No config response
-[Verify-Thread] Sending 133536 audio samples
+[Verify-Thread] Sending 66635 audio samples (before resample)
+[Verify-Thread] After resample: 24171 samples
+[Verify-Thread] Audio stats: max=0.0931, avg=0.001886, bytes=48342
 [Verify-Thread] Waiting for recognition result...
-[AudioCapture] Captured 200 frames, data.len=2646
 [Verify-Thread] ASR result: {
-  "text" : ""
+  "partial" : ""
 }
 [Verify-Thread] Recognition complete: ''
 [VoiceWake] ASR recognized: ''
-[VoiceWake] WAKE WORD DETECTED! Entering Waking state
-[VoiceWake] WAKING state - sending events and playing TTS
-[TTS] Playing response: 我在
-[TTS] Playing from file: "/data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3"
-[AudioCapture] Captured 300 frames, data.len=2734
-[TTS] Audio file played: /data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3
-[VoiceWake] TTS response played
-[VoiceWake] LISTENING state - connecting to ASR
-[VoiceWake] ASR URL: ws://192.168.150.26:2700
-[ASR-Thread] Creating tokio runtime...
-[ASR-Thread] Runtime created successfully
-[ASR-Thread] Connecting to ASR: ws://192.168.150.26:2700
-[ASR-Thread] Connected successfully
-[ASR-Config] Sending config...
-[ASR-Config] Waiting for response...
+[VoiceWake] Not a wake word, returning to Idle
+[VoiceWake] Voice activity detected (energy=0.0002, max=0.0281), entering Verifying state
+[VoiceWake] VERIFYING state - checking for wake word
+[VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
 [AudioCapture] Captured 400 frames, data.len=2646
-[ASR-Thread] block_on completed
-[VoiceWake] ASR connect_result: ERR
-[VoiceWake] ASR config error: Timeout waiting for response
-[VoiceWake] Loop iteration 2521, state=Idle, last_recv=127.758µs ago
-[VoiceWake] Received frame 101, len=2646, energy=0.000000, max=0.000837, avg=0.000183
-[VoiceWake] Loop iteration 2541, state=Idle, last_recv=145.088µs ago
-[VoiceWake] Voice activity detected (energy=0.0001, max=0.0324), entering Verifying state
-[VoiceWake] VERIFYING state - checking for wake word
-[VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
+[VoiceWake] Converted to mono: 151792 samples
 [Verify-Thread] Creating tokio runtime...
 [Verify-Thread] Runtime created successfully
 [Verify-Thread] Connected to ASR
 [Verify-Thread] Sending config...
+[Verify-Thread] No config response
+[Verify-Thread] Sending 151792 audio samples (before resample)
+[Verify-Thread] After resample: 55070 samples
+[Verify-Thread] Audio stats: max=0.1481, avg=0.005085, bytes=110140
+[Verify-Thread] Waiting for recognition result...
+[Verify-Thread] ASR result: {
+  "partial" : ""
+}
+[Verify-Thread] Recognition complete: ''
+[VoiceWake] ASR recognized: ''
+[VoiceWake] Not a wake word, returning to Idle
+[VoiceWake] Voice activity detected (energy=0.0018, max=0.1606), entering Verifying state
+[VoiceWake] VERIFYING state - checking for wake word
 [AudioCapture] Captured 500 frames, data.len=2646
-[Verify-Thread] No config response
-[Verify-Thread] Sending 791860 audio samples
-[Verify-Thread] Waiting for recognition result...
-[Verify-Thread] Recognition complete: ''
-[VoiceWake] ASR recognized: ''
-[VoiceWake] WAKE WORD DETECTED! Entering Waking state
-[VoiceWake] WAKING state - sending events and playing TTS
-[TTS] Playing response: 我在
-[TTS] Playing from file: "/data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3"
-[TTS] Audio file played: /data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3
-[VoiceWake] TTS response played
-[VoiceWake] LISTENING state - connecting to ASR
-[VoiceWake] ASR URL: ws://192.168.150.26:2700
-[ASR-Thread] Creating tokio runtime...
-[ASR-Thread] Runtime created successfully
-[ASR-Thread] Connecting to ASR: ws://192.168.150.26:2700
-[ASR-Thread] Connected successfully
-[ASR-Config] Sending config...
-[ASR-Config] Waiting for response...
-[AudioCapture] Captured 600 frames, data.len=2646
-[ASR-Thread] block_on completed
-[VoiceWake] ASR connect_result: ERR
-[VoiceWake] ASR config error: Timeout waiting for response
-[VoiceWake] Voice activity detected (energy=0.0008, max=0.1295), entering Verifying state
-[VoiceWake] VERIFYING state - checking for wake word
 [VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
+[VoiceWake] Converted to mono: 192761 samples
 [Verify-Thread] Creating tokio runtime...
 [Verify-Thread] Runtime created successfully
 [Verify-Thread] Connected to ASR
 [Verify-Thread] Sending config...
-[AudioCapture] Captured 700 frames, data.len=2646
+[AudioCapture] Captured 600 frames, data.len=2646
 [Verify-Thread] No config response
-[Verify-Thread] Sending 637510 audio samples
+[Verify-Thread] Sending 192761 audio samples (before resample)
+[Verify-Thread] After resample: 69968 samples
+[Verify-Thread] Audio stats: max=0.3053, avg=0.007054, bytes=139936
 [Verify-Thread] Waiting for recognition result...
-[Verify-Thread] Recognition complete: ''
-[VoiceWake] ASR recognized: ''
+[Verify-Thread] ASR result: {
+  "result" : [{
+      "conf" : 0.358016,
+      "end" : 0.570000,
+      "start" : 0.030000,
+      "word" : "小字"
+    }],
+  "text" : "小字"
+}
+[Verify-Thread] Final text: 小字
+[Verify-Thread] Recognition complete: '小字'
+[VoiceWake] ASR recognized: '小字'
 [VoiceWake] WAKE WORD DETECTED! Entering Waking state
 [VoiceWake] WAKING state - sending events and playing TTS
-[TTS] Playing response: 我在
-[TTS] Playing from file: "/data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3"
-[TTS] Audio file played: /data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3
+[TTS] Playing response: 在呢
+[TTS] Playing from file: "/data/workspace/shine-helper/src-tauri/resources/tts/在呢.mp3"
+[TTS] Audio file played: /data/workspace/shine-helper/src-tauri/resources/tts/在呢.mp3
 [VoiceWake] TTS response played
-[AudioCapture] Captured 800 frames, data.len=2646
+[AudioCapture] Captured 700 frames, data.len=2646
 [VoiceWake] LISTENING state - connecting to ASR
 [VoiceWake] ASR URL: ws://192.168.150.26:2700
 [ASR-Thread] Creating tokio runtime...
@@ -115,26 +101,67 @@
 [ASR-Thread] Connecting to ASR: ws://192.168.150.26:2700
 [ASR-Thread] Connected successfully
 [ASR-Config] Sending config...
-[ASR-Config] Waiting for response...
+[ASR-Config] Config sent, not waiting for response (Vosk doesn't send confirmation)
+[ASR-Thread] Config sent successfully, returning stream
 [ASR-Thread] block_on completed
-[VoiceWake] ASR connect_result: ERR
-[VoiceWake] ASR config error: Timeout waiting for response
-[VoiceWake] Voice activity detected (energy=0.0002, max=0.0783), entering Verifying state
+[VoiceWake] ASR connect_result: OK
+[VoiceWake] Config sent successfully, entering Processing state
+[VoiceWake] PROCESSING state - receiving ASR results
+[VoiceWake] Failed to send audio to ASR: IO error: A Tokio 1.x context was found, but it is being shutdown.
+[VoiceWake] PROCESSING state - receiving ASR results
+[VoiceWake] Failed to send audio to ASR: IO error: A Tokio 1.x context was found, but it is being shutdown.
+[VoiceWake] PROCESSING state - receiving ASR results
+[VoiceWake] ASR error: IO error: A Tokio 1.x context was found, but it is being shutdown.
+[VoiceWake] Processing ended: error
+[VoiceWake] Emitting voice-input-complete (processing ended)
+[VoiceWake] Voice activity detected (energy=0.0001, max=0.0647), entering Verifying state
+[VoiceWake] VERIFYING state - checking for wake word
+[VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
+[VoiceWake] Converted to mono: 273420 samples
+[Verify-Thread] Creating tokio runtime...
+[Verify-Thread] Runtime created successfully
+[Verify-Thread] Connected to ASR
+[Verify-Thread] Sending config...
+[AudioCapture] Captured 800 frames, data.len=2646
+[Verify-Thread] No config response
+[Verify-Thread] Sending 273420 audio samples (before resample)
+[Verify-Thread] After resample: 99299 samples
+[Verify-Thread] Audio stats: max=0.2605, avg=0.010954, bytes=198598
+[Verify-Thread] Waiting for recognition result...
+[Verify-Thread] ASR result: {
+  "partial" : "请 帮 我"
+}
+[Verify-Thread] Partial text: 请 帮 我
+[Verify-Thread] Recognition complete: '请 帮 我'
+[VoiceWake] ASR recognized: '请 帮 我'
+[VoiceWake] Not a wake word, returning to Idle
+[VoiceWake] Voice activity detected (energy=0.0001, max=0.0325), entering Verifying state
 [VoiceWake] VERIFYING state - checking for wake word
 [AudioCapture] Captured 900 frames, data.len=2646
 [VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
+[VoiceWake] Converted to mono: 66547 samples
 [Verify-Thread] Creating tokio runtime...
 [Verify-Thread] Runtime created successfully
 [Verify-Thread] Connected to ASR
 [Verify-Thread] Sending config...
+[AudioCapture] Captured 1000 frames, data.len=2646
 [Verify-Thread] No config response
-[Verify-Thread] Sending 651710 audio samples
+[Verify-Thread] Sending 66547 audio samples (before resample)
+[Verify-Thread] After resample: 24139 samples
+[Verify-Thread] Audio stats: max=0.0588, avg=0.004419, bytes=48278
 [Verify-Thread] Waiting for recognition result...
+[Verify-Thread] ASR result: {
+  "partial" : ""
+}
 [Verify-Thread] Recognition complete: ''
 [VoiceWake] ASR recognized: ''
-[VoiceWake] WAKE WORD DETECTED! Entering Waking state
-[VoiceWake] Loop iteration 2561, state=Waking, last_recv=3.597746002s ago
-[VoiceWake] WAKING state - sending events and playing TTS
-[TTS] Playing response: 我在
-[TTS] Playing from file: "/data/workspace/shine-helper/src-tauri/resources/tts/我在.mp3"
-[AudioCapture] Captured 1000 frames, data.len=6174
+[VoiceWake] Not a wake word, returning to Idle
+[VoiceWake] Voice activity detected (energy=0.0001, max=0.0296), entering Verifying state
+[VoiceWake] VERIFYING state - checking for wake word
+[VoiceWake] Sending audio to ASR for wake word verification, URL: ws://192.168.150.26:2700
+[VoiceWake] Converted to mono: 169300 samples
+[Verify-Thread] Creating tokio runtime...
+[Verify-Thread] Runtime created successfully
+[Verify-Thread] Connected to ASR
+[Verify-Thread] Sending config...
+[AudioCapture] Captured 1100 frames, data.len=2646

@@ -134,6 +134,34 @@
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
           />
         </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">唤醒后自动开启语音输入</label>
+          <select
+            v-model="config.voice_wake.auto_mic_after_wake"
+            :disabled="!config.voice_wake.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          >
+            <option :value="true">是（唤醒后自动聆听）</option>
+            <option :value="false">否（需要手动点击麦克风）</option>
+          </select>
+          <p class="mt-1 text-sm text-gray-500">
+            唤醒后是否自动开启语音识别功能
+          </p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">唤醒后自动发送</label>
+          <select
+            v-model="config.voice_wake.auto_send_after_wake"
+            :disabled="!config.voice_wake.enabled"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          >
+            <option :value="true">是（识别完成后自动发送）</option>
+            <option :value="false">否（需要手动点击发送按钮）</option>
+          </select>
+          <p class="mt-1 text-sm text-gray-500">
+            语音识别完成后是否自动发送消息
+          </p>
+        </div>
       </div>
     </div>
 
@@ -204,6 +232,10 @@ interface VoiceWakeConfig {
   wake_sounds: string[]
   silence_timeout: number
   end_words: string[]
+  vosk_url: string
+  vosk_api_key: string
+  auto_send_after_wake: boolean
+  auto_mic_after_wake: boolean
 }
 
 interface AppPreferences {
@@ -221,10 +253,20 @@ interface AppConfig {
 
 const config = ref<AppConfig>({
   openclaw: { url: 'http://localhost:18789', use_local: true, auto_start: true },
-  market: { url: 'http://localhost:3001', enabled: true },
+  market: { url: 'http://localhost:3001', api_key: '', enabled: true },
   preferences: { theme: 'system', language: 'zh-CN' },
   vosk: { url: 'ws://192.168.150.26:2700', api_key: '', enabled: false, silence_timeout: 3000 },
-  voice_wake: { enabled: false, wake_word: '小 Shine', wake_sounds: ['在呢', '你说', '请讲'], silence_timeout: 3000, end_words: ['结束', '停止'] }
+  voice_wake: {
+    enabled: false,
+    wake_word: '小 Shine',
+    wake_sounds: ['在呢', '在的', '我在', '请说'],
+    silence_timeout: 3000,
+    end_words: ['结束', '停止'],
+    vosk_url: 'ws://192.168.150.26:2700',
+    vosk_api_key: '',
+    auto_send_after_wake: false,
+    auto_mic_after_wake: true
+  }
 })
 
 onMounted(async () => {
