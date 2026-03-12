@@ -700,6 +700,13 @@ async fn run_wake_loop(
                 // 短暂延迟后进入监听状态
                 std::thread::sleep(Duration::from_millis(500));
 
+                // 清空 audio_rx 通道中积累的旧音频数据（TTS 播放期间的内容）
+                let mut flushed = 0;
+                while audio_rx.try_recv().is_ok() {
+                    flushed += 1;
+                }
+                println!("[VoiceWake] Flushed {} old audio frames from channel", flushed);
+
                 // 标记进入唤醒后聆听模式
                 is_wake_listening_mode = true;
                 state = WakeLoopState::Listening;
@@ -781,6 +788,9 @@ async fn run_wake_loop(
                             // 进入 Processing 循环，返回最终结果
                             let mut last_audio_time = Instant::now();
                             let mut end_reason: Option<String> = None;
+                            let mut audio_frames_sent = 0usize;
+                            let mut audio_frames_received = 0usize;
+                            let mut audio_samples_total = 0usize;
 
                             // 使用 tokio::select 等待音频数据或 ASR 结果
                             // 使用 futures::stream::unfold 或者简单的循环 + timeout
@@ -790,15 +800,28 @@ async fn run_wake_loop(
                                 loop {
                                     match audio_rx.try_recv() {
                                         Ok(audio_data) => {
+                                            audio_frames_received += 1;
                                             last_audio_time = Instant::now();
-                                            let bytes: Vec<u8> = audio_data
+
+                                            // 1. 立体声转单声道
+                                            let mono = stereo_to_mono(&audio_data);
+                                            // 2. 重采样到 16kHz
+                                            let resampled = resample_to_16k(&mono, 44100, 16000);
+                                            // 3. 转换为 16-bit PCM 小端格式
+                                            let bytes: Vec<u8> = resampled
                                                 .iter()
                                                 .flat_map(|&s| ((s * 32767.0) as i16).to_le_bytes())
                                                 .collect();
+
+                                            audio_samples_total += resampled.len();
                                             if let Err(e) = write.send(Message::Binary(bytes)).await {
-                                                eprintln!("[ASR-Thread] Failed to send audio: {}", e);
+                                                eprintln!("[ASR-Thread] Failed to send audio frame #{}: {}", audio_frames_received, e);
                                                 end_reason = Some("send_error".to_string());
                                                 break;
+                                            }
+                                            audio_frames_sent += 1;
+                                            if audio_frames_sent % 50 == 1 {
+                                                println!("[ASR-Thread] Sent {} frames ({} samples), received {}", audio_frames_sent, audio_samples_total, audio_frames_received);
                                             }
                                         }
                                         Err(TryRecvError::Empty) => {
@@ -807,6 +830,7 @@ async fn run_wake_loop(
                                         }
                                         Err(TryRecvError::Disconnected) => {
                                             // Channel closed
+                                            println!("[ASR-Thread] Audio channel disconnected after {} frames", audio_frames_received);
                                             end_reason = Some("channel_closed".to_string());
                                             break;
                                         }
@@ -849,7 +873,7 @@ async fn run_wake_loop(
                                         }
                                     }
                                     Ok(Some(Ok(Message::Close(_)))) => {
-                                        println!("[ASR-Thread] Connection closed");
+                                        println!("[ASR-Thread] Connection closed by server");
                                         end_reason = Some("closed".to_string());
                                     }
                                     Ok(Some(Err(e))) => {
@@ -870,12 +894,16 @@ async fn run_wake_loop(
 
                                 // 检查静音超时
                                 if last_audio_time.elapsed() >= silence_timeout {
-                                    println!("[ASR-Thread] Silence timeout");
+                                    println!("[ASR-Thread] Silence timeout (elapsed {:?})", last_audio_time.elapsed());
                                     end_reason = Some("silence_timeout".to_string());
                                     break;
                                 }
+
+                                // 短暂等待，避免 CPU 占用过高
+                                std::thread::sleep(Duration::from_millis(10));
                             }
 
+                            println!("[ASR-Thread] Processing loop ended: {:?}, sent {} frames, received {} frames", end_reason, audio_frames_sent, audio_frames_received);
                             Ok(end_reason)
                         })
                     }
