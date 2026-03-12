@@ -9,7 +9,7 @@ mod voice;
 
 use commands::{
     AppState, create_session, list_sessions, get_messages, delete_session, add_message, send_message, send_message_stream,
-    SkillsState, get_local_skills, install_skill, uninstall_skill,
+    SkillsState, get_local_skills, get_skills_dir, install_skill, uninstall_skill,
     VoiceWakeState, start_voice_wake, stop_voice_wake, test_voice_wake_detection, focus_window
 };
 use config::{get_app_config, save_app_config};
@@ -148,6 +148,7 @@ fn main() {
             send_message,
             send_message_stream,
             get_local_skills,
+            get_skills_dir,
             install_skill,
             uninstall_skill,
             list_microphones,

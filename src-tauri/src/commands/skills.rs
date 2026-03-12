@@ -13,19 +13,30 @@ pub fn get_local_skills(state: State<'_, SkillsState>) -> Result<Vec<Skill>, Str
 }
 
 #[tauri::command]
-pub fn install_skill(state: State<'_, SkillsState>, skill_id: String) -> Result<(), String> {
+pub fn get_skills_dir(state: State<'_, SkillsState>) -> String {
+    let manager = state.manager.lock().unwrap();
+    manager.get_skills_dir_str()
+}
+
+#[tauri::command]
+pub fn install_skill(
+    state: State<'_, SkillsState>,
+    skill_id: String,
+    skill_name: String,
+    skill_description: String,
+    skill_version: String,
+    skill_file_name: String,
+    skill_data: Vec<u8>,
+) -> Result<(), String> {
     let manager = state.manager.lock().map_err(|e| e.to_string())?;
-    // 模拟安装 - 实际应从市场API获取
-    let market_skill = crate::skills::MarketSkill {
-        id: skill_id.clone(),
-        name: skill_id.clone(),
-        description: "从市场安装的Skill".to_string(),
-        version: "1.0.0".to_string(),
-        author: "官方".to_string(),
-        icon: None,
-        download_url: "".to_string(),
-    };
-    manager.install_skill(&market_skill)
+    manager.install_skill_with_data(
+        &skill_id,
+        &skill_name,
+        &skill_description,
+        &skill_version,
+        &skill_file_name,
+        &skill_data,
+    )
 }
 
 #[tauri::command]

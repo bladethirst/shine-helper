@@ -30,7 +30,16 @@
           <input
             v-model="config.market.url"
             type="text"
-            placeholder="http://localhost:3001"
+            placeholder="http://localhost:5000"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+        </div>
+        <div>
+          <label class="block text-sm font-medium mb-1">API Key</label>
+          <input
+            v-model="config.market.api_key"
+            type="password"
+            placeholder="请输入 Skills 市场 X-API-Key"
             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
         </div>
@@ -178,6 +187,7 @@ interface OpenClawConfig {
 
 interface MarketConfig {
   url: string
+  api_key: string
   enabled: boolean
 }
 
