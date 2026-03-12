@@ -156,6 +156,42 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     dp[s1_len][s2_len]
 }
 
+/// 将音频数据下采样到目标采样率
+/// data: 输入的 f32 样本数组（范围 -1.0 到 1.0）
+/// from_sample_rate: 原始采样率
+/// to_sample_rate: 目标采样率
+fn resample_to_16k(data: &[f32], from_sample_rate: u32, to_sample_rate: u32) -> Vec<f32> {
+    let ratio = from_sample_rate as f32 / to_sample_rate as f32;
+    let mut result = Vec::with_capacity((data.len() as f32 / ratio) as usize);
+
+    let mut i = 0.0f32;
+    while (i as usize) < data.len() {
+        result.push(data[i as usize]);
+        i += ratio;
+    }
+
+    result
+}
+
+/// 将立体声交错数据转换为单声道
+/// 输入格式：[L, R, L, R, L, R, ...]
+/// 输出：[(L+R)/2, (L+R)/2, ...] 单声道数据
+fn stereo_to_mono(stereo: &[f32]) -> Vec<f32> {
+    let mut mono = Vec::with_capacity(stereo.len() / 2);
+
+    for chunk in stereo.chunks(2) {
+        if chunk.len() == 2 {
+            // 取左右声道的平均值
+            mono.push((chunk[0] + chunk[1]) / 2.0);
+        } else if chunk.len() == 1 {
+            // 处理奇数长度的情况
+            mono.push(chunk[0]);
+        }
+    }
+
+    mono
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum WakeLoopState {
     Idle,           // 待机，仅检测能量
@@ -417,10 +453,10 @@ async fn run_wake_loop(
                         let max_sample = audio_data.iter().cloned().fold(0.0f32, |a, b| a.max(b.abs()));
                         let avg_sample = audio_data.iter().map(|s| s.abs()).sum::<f32>() / audio_data.len() as f32;
 
-                        if frame_count % 50 == 1 {
-                            println!("[VoiceWake] Received frame {}, len={}, energy={:.6}, max={:.6}, avg={:.6}",
-                                frame_count, audio_data.len(), energy, max_sample, avg_sample);
-                        }
+                        // if frame_count % 50 == 1 {
+                        //     println!("[VoiceWake] Received frame {}, len={}, energy={:.6}, max={:.6}, avg={:.6}",
+                        //         frame_count, audio_data.len(), energy, max_sample, avg_sample);
+                        // }
 
                         if energy > energy_threshold {
                             // 检查冷却时间
@@ -473,10 +509,15 @@ async fn run_wake_loop(
                 println!("[VoiceWake] Sending audio to ASR for wake word verification, URL: {}", asr_url);
 
                 // 收集所有缓冲的音频数据
+                // 注意：从 AudioCapture 接收到的是立体声交错数据 (LRLRLRLR...)
                 let mut all_audio: Vec<f32> = Vec::new();
                 while let Some(chunk) = audio_buffer.pop_front() {
                     all_audio.extend(chunk);
                 }
+
+                // 先将立体声合并为单声道（取左右声道的平均值），然后下采样到 16kHz
+                let mono_audio = stereo_to_mono(&all_audio);
+                println!("[VoiceWake] Converted to mono: {} samples", mono_audio.len());
 
                 // 在后台线程执行 ASR 识别
                 let wake_word_clone = wake_word.clone();
@@ -542,12 +583,23 @@ async fn run_wake_loop(
                             }
                         }
 
-                        // 发送音频数据
-                        println!("[Verify-Thread] Sending {} audio samples", all_audio.len());
-                        let bytes: Vec<u8> = all_audio
+                        // 发送音频数据 - 先下采样到 16kHz
+                        println!("[Verify-Thread] Sending {} audio samples (before resample)", mono_audio.len());
+
+                        // 下采样到 16kHz (44100 -> 16000)
+                        let resampled = resample_to_16k(&mono_audio, 44100, 16000);
+                        println!("[Verify-Thread] After resample: {} samples", resampled.len());
+
+                        // 转换为 16-bit PCM 字节 (f32 [-1.0, 1.0] -> i16)
+                        let bytes: Vec<u8> = resampled
                             .iter()
                             .flat_map(|&s| ((s * 32767.0) as i16).to_le_bytes())
                             .collect();
+
+                        // 打印音频数据统计
+                        let max_val = resampled.iter().fold(0.0f32, |a, b| a.max(b.abs()));
+                        let avg_val = resampled.iter().map(|s| s.abs()).sum::<f32>() / resampled.len() as f32;
+                        println!("[Verify-Thread] Audio stats: max={:.4}, avg={:.6}, bytes={}", max_val, avg_val, bytes.len());
 
                         if let Err(e) = write.send(Message::Binary(bytes)).await {
                             return Err(format!("Failed to send audio: {}", e));
