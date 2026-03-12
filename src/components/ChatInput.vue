@@ -74,8 +74,11 @@ const {
   transcript: wakeTranscript,
   partialTranscript: wakePartialTranscript,
   isWakeListeningState,
+  status: wakeStatus,
   clearTranscript,
   stopWakeListening,
+  start,
+  stop,
 } = useVoiceWake()
 
 // 手动语音识别
@@ -137,9 +140,9 @@ const handleVoiceShortcut = (event: KeyboardEvent) => {
   }
 }
 
-// 监听唤醒识别结果
+// 监听唤醒识别结果（仅在唤醒聆听状态下生效）
 watch(wakeTranscript, (newVal) => {
-  if (newVal) {
+  if (newVal && isWakeListening.value) {
     displayText.value = newVal
   }
 })
@@ -159,9 +162,14 @@ watch(interimTranscript, (newVal) => {
 
 const send = () => {
   if (displayText.value.trim()) {
-    // 如果是唤醒后聆听状态，发送后停止聆听
+    // 如果是唤醒后聆听状态，发送后重启唤醒服务
     if (isWakeListening.value) {
-      stopWakeListening()
+      // 重启唤醒服务：先停止，再启动
+      stop().then(() => {
+        setTimeout(() => {
+          start()
+        }, 100)
+      })
       clearTranscript()
     } else {
       // 如果正在录音，先停止
@@ -178,13 +186,14 @@ const send = () => {
 
 // 监听语音输入完成事件（用于自动发送）
 onMounted(async () => {
-  const unlistenComplete = await tauriListen<void>('voice-input-complete', async () => {
+  const unlistenComplete = await tauriListen<void>('voice-input-complete', () => {
     // 延迟一点，确保 displayText 已更新
     setTimeout(() => {
       if (displayText.value.trim()) {
         emit('send', displayText.value)
         displayText.value = ''
-        if (isWakeListening.value) {
+        // 使用状态值判断，避免闭包捕获旧值
+        if (wakeStatus.value === 'wake-listening') {
           stopWakeListening()
           clearTranscript()
         }

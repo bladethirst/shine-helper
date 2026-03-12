@@ -847,6 +847,8 @@ async fn run_wake_loop(
                                             if let Some(partial) = result.get("partial").and_then(|p| p.as_str()) {
                                                 if !partial.is_empty() {
                                                     println!("[ASR-Thread] Partial: {}", partial);
+                                                    // 添加调试日志
+                                                    println!("[VoiceWake] Emitting voice-result (partial): {}", partial);
                                                     let _ = app.emit_all("voice-result", serde_json::json!({
                                                         "text": partial,
                                                         "is_final": false
@@ -855,6 +857,8 @@ async fn run_wake_loop(
                                             } else if let Some(result_text) = result.get("text").and_then(|t| t.as_str()) {
                                                 if !result_text.is_empty() {
                                                     println!("[ASR-Thread] Final: {}", result_text);
+                                                    // 添加调试日志
+                                                    println!("[VoiceWake] Emitting voice-result (final): {}", result_text);
                                                     let _ = app.emit_all("voice-result", serde_json::json!({
                                                         "text": result_text,
                                                         "is_final": true
@@ -925,6 +929,15 @@ async fn run_wake_loop(
                     let _ = app.emit_all("voice-input-complete", ());
                     is_wake_listening_mode = false;
                 }
+
+                // 发送状态变化事件（返回 Idle）
+                println!("[VoiceWake] Emitting voice-state-changed: idle");
+                let _ = app.emit_all("voice-state-changed", serde_json::json!({"state": "idle"}));
+                println!("[VoiceWake] State changed to Idle, returning to wake loop");
+
+                // 刷新 stdout 确保日志被输出
+                use std::io::{stdout, Write};
+                let _ = stdout().flush();
 
                 // 返回 Idle 状态
                 state = WakeLoopState::Idle;
