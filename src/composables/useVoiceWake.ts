@@ -35,6 +35,7 @@ export function useVoiceWake() {
 
     // 监听识别结果 - 支持增量更新（仅在 wake-listening 状态下处理）
     unlistenResult = await listen<VoiceResultPayload>('voice-result', (event) => {
+      console.log('[useVoiceWake] Received voice-result:', event.payload, 'isWakeListening:', isWakeListening.value)
       // 使用 isWakeListening 判断，避免 status 被修改后导致后续事件被忽略
       if (!isWakeListening.value) {
         return
@@ -44,6 +45,7 @@ export function useVoiceWake() {
 
       if (is_final) {
         // 最终结果：追加到 transcript，清空 partial
+        console.log('[useVoiceWake] Final result, appending:', text)
         if (text.trim()) {
           transcript.value = (transcript.value + ' ' + text).trim()
         }
@@ -58,12 +60,14 @@ export function useVoiceWake() {
 
     // 监听状态变化 - 新增 wake-listening 状态
     unlistenState = await listen<{ state: VoiceStatus }>('voice-state-changed', (event) => {
+      console.log('[useVoiceWake] Received voice-state-changed:', event.payload.state)
       const newState = event.payload.state
       // 如果进入 listening 状态且是唤醒后，标记为 wake-listening
       if (newState === 'listening') {
         isWakeListening.value = true
         status.value = 'wake-listening'
       } else if (newState === 'idle') {
+        console.log('[useVoiceWake] State changed to idle, clearing transcript')
         isWakeListening.value = false
         transcript.value = ''
         partialTranscript.value = ''

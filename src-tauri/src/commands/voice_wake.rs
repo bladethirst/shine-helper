@@ -49,6 +49,7 @@ pub struct VoiceWakeState {
     pub error_count: Arc<Mutex<u32>>,
     pub fallback_config: FallbackConfig,
     pub is_fallback_mode: Arc<Mutex<bool>>,
+    pub is_running_atomic: Arc<AtomicBool>,  // 用于快速通知线程退出
 }
 
 impl VoiceWakeState {
@@ -58,6 +59,7 @@ impl VoiceWakeState {
             error_count: Arc::new(Mutex::new(0)),
             fallback_config: FallbackConfig::default(),
             is_fallback_mode: Arc::new(Mutex::new(false)),
+            is_running_atomic: Arc::new(AtomicBool::new(false)),
         }
     }
     
@@ -210,7 +212,10 @@ pub async fn start_voice_wake(
         return Ok(());
     }
     *is_running = true;
-    
+
+    // 设置 is_running_atomic 为 true
+    state.is_running_atomic.store(true, Ordering::SeqCst);
+
     let config = crate::config::get_app_config().map_err(|e| e.to_string())?;
     let vosk_url = config.vosk.url.clone();
     let vosk_api_key = config.vosk.api_key.clone();
@@ -218,15 +223,17 @@ pub async fn start_voice_wake(
     let wake_sounds = config.voice_wake.wake_sounds.clone();
     let silence_timeout = config.voice_wake.silence_timeout;
     let end_words = config.voice_wake.end_words.clone();
-    
+
     let is_running_clone = Arc::clone(&state.is_running);
-    
+    let is_running_atomic_clone = Arc::clone(&state.is_running_atomic);
+
     println!("[VoiceWake] Spawning wake loop task...");
-    
+
     tokio::spawn(async move {
         println!("[VoiceWake] Task started, calling run_wake_loop...");
         run_wake_loop(
             is_running_clone,
+            is_running_atomic_clone,
             app,
             wake_word,
             wake_sounds,
@@ -237,9 +244,9 @@ pub async fn start_voice_wake(
         ).await;
         println!("[VoiceWake] run_wake_loop returned");
     });
-    
+
     println!("[VoiceWake] Spawn complete");
-    
+
     Ok(())
 }
 
@@ -247,6 +254,8 @@ pub async fn start_voice_wake(
 pub async fn stop_voice_wake(state: State<'_, VoiceWakeState>) -> Result<(), String> {
     let mut is_running = state.is_running.lock().await;
     *is_running = false;
+    // 设置 is_running_atomic 为 false，通知所有线程退出
+    state.is_running_atomic.store(false, Ordering::SeqCst);
     Ok(())
 }
 
@@ -291,6 +300,7 @@ use std::thread;
 
 async fn run_wake_loop(
     is_running: Arc<Mutex<bool>>,
+    is_running_atomic: Arc<AtomicBool>,
     app: AppHandle,
     wake_word: String,
     wake_sounds: Vec<String>,
@@ -300,13 +310,12 @@ async fn run_wake_loop(
     end_words: Vec<String>,
 ) {
     println!("[VoiceWake] Starting wake loop with wake_word='{}', vosk_url={}", wake_word, vosk_url);
-    
+
     // 使用无界 channel 避免音频数据丢失
     let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<f32>>();
-    
+
     println!("[VoiceWake] Channel created (unbounded), spawning capture thread...");
-    
-    let is_running_atomic = Arc::new(AtomicBool::new(true));
+
     let is_running_capture = Arc::clone(&is_running_atomic);
     
     // 在后台线程运行音频捕获
@@ -733,6 +742,7 @@ async fn run_wake_loop(
                     let app = app.clone();
                     let end_words = end_words.clone();
                     let silence_timeout = silence_timeout;
+                    let is_running_atomic = is_running_atomic.clone();  // 传递 is_running_atomic
                     move || {
                         println!("[ASR-Thread] Creating tokio runtime for Listening+Processing loop...");
 
@@ -791,11 +801,21 @@ async fn run_wake_loop(
                             let mut audio_frames_sent = 0usize;
                             let mut audio_frames_received = 0usize;
                             let mut audio_samples_total = 0usize;
+                            let mut last_final_text: Option<String> = None;  // 跟踪已发送的最终结果
 
                             // 使用 tokio::select 等待音频数据或 ASR 结果
                             // 使用 futures::stream::unfold 或者简单的循环 + timeout
                             use tokio::sync::mpsc::error::TryRecvError;
+                            use std::sync::atomic::Ordering;
+
                             loop {
+                                // 检查是否应该退出（is_running 变为 false）
+                                if !is_running_atomic.load(Ordering::SeqCst) {
+                                    println!("[ASR-Thread] is_running is false, exiting");
+                                    end_reason = Some("stop_requested".to_string());
+                                    break;
+                                }
+
                                 // 尝试接收音频数据并发送
                                 loop {
                                     match audio_rx.try_recv() {
@@ -820,9 +840,9 @@ async fn run_wake_loop(
                                                 break;
                                             }
                                             audio_frames_sent += 1;
-                                            if audio_frames_sent % 50 == 1 {
-                                                println!("[ASR-Thread] Sent {} frames ({} samples), received {}", audio_frames_sent, audio_samples_total, audio_frames_received);
-                                            }
+                                            // if audio_frames_sent % 50 == 1 {
+                                            //     println!("[ASR-Thread] Sent {} frames ({} samples), received {}", audio_frames_sent, audio_samples_total, audio_frames_received);
+                                            // }
                                         }
                                         Err(TryRecvError::Empty) => {
                                             // 没有数据，继续接收 ASR 结果
@@ -846,7 +866,7 @@ async fn run_wake_loop(
                                         if let Ok(result) = serde_json::from_str::<serde_json::Value>(&text) {
                                             if let Some(partial) = result.get("partial").and_then(|p| p.as_str()) {
                                                 if !partial.is_empty() {
-                                                    println!("[ASR-Thread] Partial: {}", partial);
+                                                    // println!("[ASR-Thread] Partial: {}", partial);
                                                     // 添加调试日志
                                                     println!("[VoiceWake] Emitting voice-result (partial): {}", partial);
                                                     let _ = app.emit_all("voice-result", serde_json::json!({
@@ -856,9 +876,17 @@ async fn run_wake_loop(
                                                 }
                                             } else if let Some(result_text) = result.get("text").and_then(|t| t.as_str()) {
                                                 if !result_text.is_empty() {
+                                                    // 检查是否是重复的最终结果
+                                                    println!("[ASR-Thread] Checking duplicate: last_final_text={:?}, current={}", last_final_text, result_text);
+                                                    if last_final_text.as_ref() == Some(&result_text.to_string()) {
+                                                        // 跳过重复的最终结果
+                                                        println!("[ASR-Thread] Skipping duplicate final result");
+                                                        continue;
+                                                    }
                                                     println!("[ASR-Thread] Final: {}", result_text);
                                                     // 添加调试日志
                                                     println!("[VoiceWake] Emitting voice-result (final): {}", result_text);
+                                                    last_final_text = Some(result_text.to_string());
                                                     let _ = app.emit_all("voice-result", serde_json::json!({
                                                         "text": result_text,
                                                         "is_final": true

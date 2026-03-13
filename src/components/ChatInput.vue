@@ -142,6 +142,7 @@ const handleVoiceShortcut = (event: KeyboardEvent) => {
 
 // 监听唤醒识别结果（仅在唤醒聆听状态下生效）
 watch(wakeTranscript, (newVal) => {
+  console.log('[ChatInput] wakeTranscript changed:', newVal, 'isWakeListening:', isWakeListening.value)
   if (newVal && isWakeListening.value) {
     displayText.value = newVal
   }
@@ -164,11 +165,12 @@ const send = () => {
   if (displayText.value.trim()) {
     // 如果是唤醒后聆听状态，发送后重启唤醒服务
     if (isWakeListening.value) {
-      // 重启唤醒服务：先停止，再启动
+      // 重启唤醒服务：先停止，等待一下，再启动
       stop().then(() => {
+        // 等待 500ms 确保旧线程退出
         setTimeout(() => {
           start()
-        }, 100)
+        }, 500)
       })
       clearTranscript()
     } else {
