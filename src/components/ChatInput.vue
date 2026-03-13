@@ -189,16 +189,29 @@ const send = () => {
 // 监听语音输入完成事件（用于自动发送）
 onMounted(async () => {
   const unlistenComplete = await tauriListen<void>('voice-input-complete', () => {
+    console.log('[ChatInput] Received voice-input-complete, isWakeListening:', isWakeListening.value, 'displayText:', displayText.value)
     // 延迟一点，确保 displayText 已更新
     setTimeout(() => {
       if (displayText.value.trim()) {
+        // 有文字，自动发送并重启唤醒服务
         emit('send', displayText.value)
         displayText.value = ''
-        // 使用状态值判断，避免闭包捕获旧值
-        if (wakeStatus.value === 'wake-listening') {
-          stopWakeListening()
-          clearTranscript()
-        }
+        // 重启唤醒服务：先停止，等待一下，再启动
+        stop().then(() => {
+          setTimeout(() => {
+            start()
+          }, 500)
+        })
+        clearTranscript()
+      } else {
+        // 没有文字（可能是说了"结束"但没有其他内容），直接重启唤醒服务
+        console.log('[ChatInput] No displayText, just restarting wake service')
+        stop().then(() => {
+          setTimeout(() => {
+            start()
+          }, 500)
+        })
+        clearTranscript()
       }
     }, 100)
   })

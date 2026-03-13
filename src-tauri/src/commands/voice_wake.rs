@@ -876,6 +876,22 @@ async fn run_wake_loop(
                                                 }
                                             } else if let Some(result_text) = result.get("text").and_then(|t| t.as_str()) {
                                                 if !result_text.is_empty() {
+                                                    // 先检查是否是结束词
+                                                    let mut is_end_word = false;
+                                                    for end_word in &end_words {
+                                                        if result_text.contains(end_word) {
+                                                            println!("[ASR-Thread] End word '{}' detected, skipping voice-result", end_word);
+                                                            end_reason = Some("end_word".to_string());
+                                                            is_end_word = true;
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    // 如果是结束词，不发送 voice-result 事件，直接退出循环
+                                                    if is_end_word {
+                                                        continue;
+                                                    }
+
                                                     // 检查是否是重复的最终结果
                                                     println!("[ASR-Thread] Checking duplicate: last_final_text={:?}, current={}", last_final_text, result_text);
                                                     if last_final_text.as_ref() == Some(&result_text.to_string()) {
@@ -891,15 +907,6 @@ async fn run_wake_loop(
                                                         "text": result_text,
                                                         "is_final": true
                                                     }));
-
-                                                    // 检查结束词
-                                                    for end_word in &end_words {
-                                                        if result_text.contains(end_word) {
-                                                            println!("[ASR-Thread] End word '{}' detected", end_word);
-                                                            end_reason = Some("end_word".to_string());
-                                                            break;
-                                                        }
-                                                    }
                                                 }
                                             }
                                         }
