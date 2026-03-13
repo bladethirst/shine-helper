@@ -5,6 +5,19 @@ OPENCLAW_DIR="$SCRIPT_DIR/resources/openclaw"
 NODE_DIR="$OPENCLAW_DIR/node"
 OPENCLAW_APP_DIR="$OPENCLAW_DIR/openclaw"
 
+# OpenClaw 配置文件路径
+OPENCLAW_CONFIG_PATH="$OPENCLAW_DIR/data/openclaw.json"
+
+# OpenClaw 状态目录（用户桌面 workspace）
+# 使用实际的用户家目录，避免权限问题
+OPENCLAW_STATE_DIR="$HOME/Desktop/workspace/.openclaw"
+
+# OpenClaw 主目录
+OPENCLAW_HOME="$OPENCLAW_APP_DIR"
+
+# 确保使用当前用户的实际家目录
+REAL_HOME="$HOME"
+
 SHINE_BIN="$SCRIPT_DIR/shine_helper"
 if [ ! -x "$SHINE_BIN" ]; then
     SHINE_BIN="$SCRIPT_DIR/src-tauri/target/release/shine-helper"
@@ -14,11 +27,33 @@ if [ ! -x "$SHINE_BIN" ]; then
 fi
 
 echo "[Shine Helper] 检查运行环境..."
+echo "[Shine Helper] 当前用户：$(whoami)"
+echo "[Shine Helper] HOME 目录：$HOME"
+echo "[Shine Helper] OpenClaw 工作目录：$OPENCLAW_STATE_DIR"
+
+# 创建 Desktop 目录（如果不存在）
+if [ ! -d "$REAL_HOME/Desktop" ]; then
+    echo "[Shine Helper] 创建 Desktop 目录：$REAL_HOME/Desktop"
+    mkdir -p "$REAL_HOME/Desktop"
+fi
+
+# 创建 OpenClaw 状态目录（桌面 workspace）
+if [ ! -d "$OPENCLAW_STATE_DIR" ]; then
+    echo "[Shine Helper] 创建 OpenClaw 工作目录：$OPENCLAW_STATE_DIR"
+    mkdir -p "$OPENCLAW_STATE_DIR"
+fi
 
 # 检查必要文件
 if [ ! -x "$NODE_DIR/bin/node" ]; then
     echo "[错误] 未找到 Node.js 运行时"
     echo "请确保 resources/openclaw/node 目录存在 Node.js"
+    read -p "按回车键退出..."
+    exit 1
+fi
+
+if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
+    echo "[错误] 未找到 OpenClaw 配置文件"
+    echo "配置文件路径：$OPENCLAW_CONFIG_PATH"
     read -p "按回车键退出..."
     exit 1
 fi
@@ -50,15 +85,19 @@ if netstat -ano 2>/dev/null | grep -q ":18789 " || ss -tuln 2>/dev/null | grep -
 else
     echo "[Shine Helper] 启动 OpenClaw 服务..."
 
-    # 检查是否需要初始化配置
-    if [ ! -f "$HOME/.openclaw/openclaw.json" ]; then
-        echo "[Shine Helper] 初始化 OpenClaw 配置..."
-        cd "$OPENCLAW_APP_DIR"
-        "$NODE_DIR/bin/node" "$OPENCLAW_APP_DIR/openclaw.mjs" onboard --non-interactive --accept-risk > /tmp/openclaw-setup.log 2>&1
-    fi
+    # 设置 OpenClaw 环境变量
+    export OPENCLAW_HOME="$OPENCLAW_HOME"
+    export OPENCLAW_STATE_DIR="$OPENCLAW_STATE_DIR"
+    export OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH"
+
+    echo "[Shine Helper] OpenClaw 环境变量:"
+    echo "  OPENCLAW_HOME=$OPENCLAW_HOME"
+    echo "  OPENCLAW_STATE_DIR=$OPENCLAW_STATE_DIR"
+    echo "  OPENCLAW_CONFIG_PATH=$OPENCLAW_CONFIG_PATH"
 
     cd "$OPENCLAW_APP_DIR"
-    nohup "$NODE_DIR/bin/node" "$OPENCLAW_APP_DIR/openclaw.mjs" gateway run --port 18789 > /tmp/openclaw.log 2>&1 &
+    OPENCLAW_HOME="$OPENCLAW_HOME" OPENCLAW_STATE_DIR="$OPENCLAW_STATE_DIR" OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH" \
+        nohup "$NODE_DIR/bin/node" "$OPENCLAW_APP_DIR/openclaw.mjs" gateway run --port 18789 > /tmp/openclaw.log 2>&1 &
     OPENCLAW_PID=$!
 
     echo "[Shine Helper] 等待服务启动..."

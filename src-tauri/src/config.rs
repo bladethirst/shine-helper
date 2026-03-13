@@ -155,6 +155,13 @@ fn get_config_path() -> PathBuf {
 }
 
 fn get_openclaw_config_path() -> PathBuf {
+    // 优先使用环境变量 OPENCLAW_CONFIG_PATH
+    if let Ok(config_path) = std::env::var("OPENCLAW_CONFIG_PATH") {
+        eprintln!("[DEBUG] Using OPENCLAW_CONFIG_PATH: {}", config_path);
+        return PathBuf::from(config_path);
+    }
+
+    // 回退到默认路径 ~/.openclaw/openclaw.json
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/root"))
         .join(".openclaw")
