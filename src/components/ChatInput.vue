@@ -74,9 +74,9 @@ const {
   transcript: wakeTranscript,
   partialTranscript: wakePartialTranscript,
   isWakeListeningState,
-  status: wakeStatus,
+  status: _wakeStatus,
   clearTranscript,
-  stopWakeListening,
+  stopWakeListening: _stopWakeListening,
   start,
   stop,
 } = useVoiceWake()
