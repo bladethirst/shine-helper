@@ -33,6 +33,11 @@ shine-helper.exe
 
 # Resources (external dependencies - should be downloaded separately)
 resources/openclaw
+resources/node
+resources/openclaw*
 src-tauri/resources/openclaw
+
+src-tauri/Cargo.toml
+src-tauri/Cargo.lock
 src-tauri/resources.worktrees
 .worktrees

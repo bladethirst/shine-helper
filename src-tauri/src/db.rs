@@ -86,7 +86,16 @@ impl Database {
 
     pub fn get_sessions(&self) -> SqliteResult<Vec<Session>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC")?;
+        // 使用 LEFT JOIN 获取每个会话的第一条用户消息作为标题
+        let mut stmt = conn.prepare(
+            "SELECT s.id, COALESCE(
+                (SELECT m.content FROM messages m
+                 WHERE m.session_id = s.id AND m.role = 'user'
+                 ORDER BY m.timestamp ASC LIMIT 1),
+                s.title
+             ) as title, s.created_at, s.updated_at
+             FROM sessions s ORDER BY s.updated_at DESC"
+        )?;
         let sessions = stmt.query_map([], |row| {
             Ok(Session {
                 id: row.get(0)?,

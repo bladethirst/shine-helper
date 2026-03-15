@@ -20,11 +20,13 @@ use db::Database;
 use skills::SkillsManager;
 use tauri::Manager;
 use std::sync::Mutex;
-use std::collections::HashMap;
-use std::process::Command;
+use std::process::{Command, Child};
 use std::net::TcpStream;
 use std::time::Duration;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
+use std::io::{self, Write};
+use std::fs;
+use std::collections::HashMap;
 
 fn check_openclaw_running() -> bool {
     TcpStream::connect_timeout(
@@ -43,81 +45,230 @@ fn get_node_exe(node_dir: &PathBuf) -> PathBuf {
     node_dir.join("bin").join("node")
 }
 
-fn start_openclaw_process(openclaw_dir: &str, node_dir: &str) -> Result<(), String> {
-    let openclaw_path = PathBuf::from(openclaw_dir);
-    let node_path = PathBuf::from(node_dir);
-    
-    let gateway_js = openclaw_path.join("gateway.js");
-    let data_dir = openclaw_path.join("data");
-    let node_exe = get_node_exe(&node_path);
-    
+/// Start OpenClaw process with proper environment variables
+fn start_openclaw_process(
+    openclaw_dir: &Path,
+    node_dir: &Path,
+    config_path: &Path,
+    state_dir: &Path,
+) -> Result<Child, String> {
+    let node_exe = get_node_exe(&node_dir.to_path_buf());
+    let openclaw_mjs = openclaw_dir.join("openclaw.mjs");
+    let data_dir = openclaw_dir.join("data");
+
+    // Check Node.js executable
     if !node_exe.exists() {
         return Err(format!("Node.js executable not found: {:?}", node_exe));
     }
-    
-    if !gateway_js.exists() {
-        return Err("OpenClaw gateway.js not found".to_string());
+
+    // Check OpenClaw main file
+    if !openclaw_mjs.exists() {
+        return Err(format!("OpenClaw openclaw.mjs not found: {:?}", openclaw_mjs));
     }
-    
-    std::fs::create_dir_all(&data_dir).ok();
-    
+
+    // Check config file
+    if !config_path.exists() {
+        return Err(format!("OpenClaw config not found: {:?}", config_path));
+    }
+
+    // Create data directory
+    fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("Failed to create data directory: {}", e))?;
+
+    println!("[Shine Helper] Starting OpenClaw gateway...");
+    println!("  Node.js: {:?}", node_exe);
+    println!("  OpenClaw: {:?}", openclaw_mjs);
+    println!("  Config: {:?}", config_path);
+    println!("  State Dir: {:?}", state_dir);
+
+    // Build command with environment variables
+    // OPENCLAW_HOME and OPENCLAW_STATE_DIR both point to state_dir (resources/.openclaw)
+    // OPENCLAW_CONFIG_PATH points to config_path (resources/openclaw.json)
     let mut cmd = Command::new(&node_exe);
-    cmd.arg(gateway_js.to_str().unwrap())
+    cmd.env("OPENCLAW_HOME", state_dir)
+       .env("OPENCLAW_STATE_DIR", state_dir)
+       .env("OPENCLAW_CONFIG_PATH", config_path)
+       .arg(&openclaw_mjs)
+       .arg("gateway")
+       .arg("run")
        .arg("--port")
-       .arg("18789")
-       .arg("--data")
-       .arg(data_dir.to_str().unwrap())
-       .spawn()
-       .map_err(|e| format!("Failed to start OpenClaw: {}", e))?;
-    
-    std::thread::sleep(Duration::from_secs(5));
-    
+       .arg("18789");
+
+    // Redirect output to log file
+    let log_path = std::env::temp_dir().join("openclaw.log");
+    let log_file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&log_path)
+        .map_err(|e| format!("Failed to create log file: {}", e))?;
+
+    cmd.stdout(log_file.try_clone().map_err(|e| e.to_string())?);
+    cmd.stderr(log_file);
+
+    // Spawn the process
+    let mut child = cmd.spawn()
+        .map_err(|e| format!("Failed to spawn OpenClaw process: {}", e))?;
+
+    println!("[Shine Helper] Waiting for OpenClaw to start...");
+    std::thread::sleep(Duration::from_secs(8));
+
+    // Verify service is running
+    if check_openclaw_running() {
+        println!("[Shine Helper] OpenClaw gateway is ready on port 18789");
+        Ok(child)
+    } else {
+        let _ = child.kill();
+        let log_content = fs::read_to_string(std::env::temp_dir().join("openclaw.log"))
+            .unwrap_or_else(|_| "Cannot read log file".to_string());
+        Err(format!(
+            "OpenClaw failed to start. Last 20 lines of log:\n{}",
+            log_content.lines().rev().take(20).collect::<Vec<_>>().join("\n")
+        ))
+    }
+}
+
+/// Check all prerequisites for OpenClaw
+fn check_openclaw_prerequisites(
+    node_dir: &Path,
+    openclaw_dir: &Path,
+    config_path: &Path,
+) -> Result<(), String> {
+    let node_exe = get_node_exe(&node_dir.to_path_buf());
+
+    // Check Node.js
+    if !node_exe.exists() {
+        return Err(format!(
+            "Node.js not found at {:?}\nPlease ensure resources/openclaw/node directory contains Node.js",
+            node_exe
+        ));
+    }
+
+    // Check OpenClaw app
+    if !openclaw_dir.exists() {
+        return Err(format!(
+            "OpenClaw application not found at {:?}",
+            openclaw_dir
+        ));
+    }
+
+    // Check config
+    if !config_path.exists() {
+        return Err(format!(
+            "OpenClaw config not found at {:?}",
+            config_path
+        ));
+    }
+
+    // Check openclaw.mjs
+    let openclaw_mjs = openclaw_dir.join("openclaw.mjs");
+    if !openclaw_mjs.exists() {
+        return Err(format!(
+            "openclaw.mjs not found at {:?}",
+            openclaw_mjs
+        ));
+    }
+
     Ok(())
 }
 
 fn main() {
+    println!("[Shine Helper] ====================================");
+    println!("[Shine Helper] Starting Shine Helper...");
+    println!("[Shine Helper] ====================================");
+
+    // Get executable directory
     let exe_dir = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
         .unwrap_or_default();
-    
-    let resources_dir = exe_dir.join("resources").join("openclaw");
-    let node_dir = resources_dir.join("node");
-    let openclaw_dir = resources_dir.join("openclaw");
-    
-    if resources_dir.exists() && !check_openclaw_running() {
-        println!("[Shine Helper] Starting OpenClaw...");
-        if let Err(e) = start_openclaw_process(
-            openclaw_dir.to_str().unwrap_or(""),
-            node_dir.to_str().unwrap_or("")
-        ) {
-            eprintln!("[Shine Helper] Warning: Failed to start OpenClaw: {}", e);
-        }
+
+    println!("[Shine Helper] Executable directory: {:?}", exe_dir);
+
+    // Set up OpenClaw directories
+    // base_dir = resources directory
+    // openclaw_dir = resources/openclaw (where openclaw.mjs and node_modules live)
+    // node_dir = resources/node (where Node.js runtime lives)
+    // state_dir = resources/.openclaw (where state and config live)
+    let base_dir = exe_dir.join("resources");
+    let openclaw_dir = base_dir.join("openclaw"); // OpenClaw app files
+    let node_dir = base_dir.join("node"); // Node.js runtime
+    let state_dir = base_dir.join(".openclaw"); // State directory (same as OPENCLAW_HOME)
+    let config_path = base_dir.join("openclaw.json"); // Config file
+
+    // Create necessary directories (state_dir = resources/.openclaw)
+    if let Err(e) = fs::create_dir_all(&state_dir) {
+        eprintln!("[Shine Helper] Failed to create state directory: {}", e);
+    } else {
+        println!("[Shine Helper] Created state directory: {:?}", state_dir);
     }
-    
+
+    // Variable to hold OpenClaw process
+    let mut openclaw_process: Option<Child> = None;
+
+    // Check if OpenClaw resources exist
+    if openclaw_dir.exists() {
+        // Check prerequisites
+        match check_openclaw_prerequisites(
+            &openclaw_dir,
+            &node_dir,
+            &config_path,
+        ) {
+            Ok(_) => {
+                // Check if OpenClaw is already running
+                if check_openclaw_running() {
+                    println!("[Shine Helper] OpenClaw gateway is already running on port 18789");
+                } else {
+                    // Start OpenClaw - use state_dir for both OPENCLAW_HOME and OPENCLAW_STATE_DIR
+                    match start_openclaw_process(
+                        &openclaw_dir,
+                        &node_dir,
+                        &config_path,
+                        &state_dir, // state_dir = resources/.openclaw
+                    ) {
+                        Ok(child) => {
+                            openclaw_process = Some(child);
+                            println!("[Shine Helper] OpenClaw gateway started successfully");
+                        }
+                        Err(e) => {
+                            eprintln!("[Shine Helper] Warning: Failed to start OpenClaw: {}", e);
+                            eprintln!("[Shine Helper] Some features may not work without OpenClaw");
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[Shine Helper] OpenClaw prerequisites check failed: {}", e);
+                eprintln!("[Shine Helper] Running in limited mode without OpenClaw");
+            }
+        }
+    } else {
+        println!("[Shine Helper] OpenClaw resources not found, running in limited mode");
+        println!("[Shine Helper] Expected resources at: {:?}", openclaw_dir);
+    }
+
+    // Initialize database
     let db = Database::new().expect("Failed to initialize database");
     let skills_manager = SkillsManager::new();
-    
+
+    // Build and run Tauri application
     tauri::Builder::default()
-        // Manage state
-        .manage(AppState { 
+        .manage(AppState {
             db: Mutex::new(db),
             openclaw_sessions: Mutex::new(HashMap::new()),
         })
         .manage(SkillsState { manager: Mutex::new(skills_manager) })
         .manage(VoiceWakeState::new())
         .setup(|app| {
-            // Auto-start voice wake service when app starts if it's enabled in config
+            // Auto-start voice wake service when app starts if enabled
             let app_handle = app.handle();
             std::thread::spawn(move || {
-                // Wait a little for initialization before attempting auto-start
                 std::thread::sleep(std::time::Duration::from_secs(1));
-                
+
                 match get_app_config() {
                     Ok(config) => {
                         if config.voice_wake.enabled {
                             println!("[AutoVoiceWake] Auto-starting voice wake service...");
-                            // Use tokio runtime to call the async start_voice_wake function
                             let rt = tokio::runtime::Runtime::new().unwrap();
                             rt.block_on(async move {
                                 let state = app_handle.state::<VoiceWakeState>();
@@ -163,4 +314,10 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+
+    // Cleanup: kill OpenClaw process on exit
+    if let Some(mut child) = openclaw_process {
+        let _ = child.kill();
+        println!("[Shine Helper] OpenClaw gateway stopped");
+    }
 }

@@ -161,6 +161,17 @@ fn get_openclaw_config_path() -> PathBuf {
         return PathBuf::from(config_path);
     }
 
+    // 尝试从应用程序目录读取（便携模式）
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let portable_config = exe_dir.join("resources").join("openclaw.json");
+            if portable_config.exists() {
+                eprintln!("[DEBUG] Found portable config at: {:?}", portable_config);
+                return portable_config;
+            }
+        }
+    }
+
     // 回退到默认路径 ~/.openclaw/openclaw.json
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("/root"))
